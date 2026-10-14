@@ -1,0 +1,1 @@
+#Hier kommt der Code für das Journal hinein
