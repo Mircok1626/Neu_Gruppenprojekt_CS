@@ -27,10 +27,10 @@ def zeige_banner():
             Wetter
         </h1>
         <p style="margin: 8px 0 0 0; font-size: 18px; color: #F8E8EC;">
-            Warum warnt die App? Hier siehst du die Ursachen hinter jedem Alarm.
+           Bedingungen vor dem Spritzen prüfen: Aktuelle Werte und Prognose für Zizers. 
         </p>
     </div>
-    """, unsafe_allow_html=True) #unsafe_allow_html=True erlaubt HTML
+    """, unsafe_allow_html=True) #unsafe_allow_html=True erlaubt die Verwendung von HTML
 
 
 #st.cache_data merkt sich das Ergebnis für 1 Stunde (3600 Sekunden).
