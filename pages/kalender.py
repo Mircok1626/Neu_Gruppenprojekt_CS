@@ -276,12 +276,20 @@ with bereich_ampel:
             empfehlung = f"Empfohlen: {WOCHENTAGE[gute[0].weekday()]}, {gute[0]:%d.%m.} ab {start} Uhr"
         else:
             empfehlung = "Kein grüner Tag vor der Frist. Prüfe die gelben Tage."
+        # Das Wetter am Tag der Infektion (von Open-Meteo), damit man sieht, warum gewarnt wird
+        wetter_text = f"{infektion['niederschlag_mm']:.1f} mm Regen, {infektion['temp_mittel']:.0f} °C"
+        # Gibt es noch weitere offene Infektionen? Dann darauf hinweisen.
+        if len(offen) > 1:
+            weitere = f"<br>Dazu {len(offen) - 1} weitere Infektion(en), siehe «Laufende Inkubationen»."
+        else:
+            weitere = ""
         st.markdown(f"""
         <div style="background-color: {WEINROT}; color: white; padding: 20px; border-radius: 15px;">
-            <p style="margin: 0; color: #F3D9DF;">Infektion am {infektion['start']:%d.%m.} (Risiko {infektion['stufe']})</p>
+            <p style="margin: 0; color: #F3D9DF;">Infektion am {infektion['start']:%d.%m.} · Wetter an diesem Tag: {wetter_text} · Risiko {infektion['stufe']}</p>
             <h3 style="margin: 0; color: white;">Spritzen bis {WOCHENTAGE[frist.weekday()]}, {frist:%d.%m.}</h3>
-            <p style="margin: 0;">Noch {len(gute)} gute Tage vor der Frist. {empfehlung}</p>
+            <p style="margin: 0;">{empfehlung}{weitere}</p>
         </div>""", unsafe_allow_html=True)
+        st.caption("Frist = letzter sicherer Spritztag, bevor die Krankheit ausbricht.")
     else:
         frist, gute = None, []
         if in_saison(pd.Series([pd.Timestamp(heute)])).iloc[0]:
@@ -302,10 +310,7 @@ with bereich_ampel:
         if tag == frist:
             marken.append("Frist")
 
-        if frist is not None and tag > frist:
-            farbe, text = "#EEEEEE", "nach Frist"
-        else:
-            farbe, text = FARBEN[stufe], AMPEL[stufe] + (f"<br>ab {start} Uhr" if stufe < 2 else "")
+        farbe, text = FARBEN[stufe], AMPEL[stufe] + (f"<br>ab {start} Uhr" if stufe < 2 else "")
         rahmen = f"3px solid {GOLD}" if len(gute) > 0 and tag == gute[0] else "1px solid #CCCCCC"
 
         spalte.markdown(f"""
@@ -315,7 +320,8 @@ with bereich_ampel:
             <small>{", ".join(gruende)}</small><br>
             <b style="color: {WEINROT};">{" · ".join(marken)}</b>
         </div>""", unsafe_allow_html=True)
-    st.caption("Goldener Rahmen: empfohlener Tag (erster grüner Tag vor der Frist).")
+    st.caption("Die Farbe zeigt, ob das Wetter zum Spritzen passt. "
+               "Goldener Rahmen: empfohlener Tag (erster grüner Tag vor der Frist).")
 
 with bereich_inkubation:
     st.subheader("Laufende Inkubationen")
