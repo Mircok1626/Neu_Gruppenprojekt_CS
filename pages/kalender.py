@@ -196,15 +196,20 @@ with bereich_inkubation:
         laufend.loc[laufend["start"] > tage[0], "art"] = "Prognose"
         achse = alt.X("start:T", title=None, scale=alt.Scale(domain=[tage[0], tage[-1] + pd.Timedelta(days=1)]),
                       axis=alt.Axis(format="%d.%m.", tickCount=14))
+        zeile = alt.Y("name:N", title="Infektion", sort=alt.SortField("start"))  # nach Datum sortiert
+        laufend["frist_text"] = "spritzen bis " + laufend["frist"].dt.strftime("%d.%m.")
         balken = alt.Chart(laufend).mark_bar(color=WEINROT, stroke=WEINROT, clip=True, height=20).encode(
-            x=achse, x2="ende:T", y=alt.Y("name:N", title="Infektion", sort=alt.SortField("start")),
+            x=achse, x2="ende:T", y=zeile,
             opacity=alt.Opacity("art:N", title=None, scale=alt.Scale(domain=["berechnet", "Prognose"], range=[0.9, 0.2])),
             strokeDash=alt.StrokeDash("art:N", title=None, scale=alt.Scale(domain=["berechnet", "Prognose"], range=[[1, 0], [5, 3]])))
         striche = alt.Chart(laufend).mark_tick(color=GOLD, thickness=4, size=20, clip=True).encode(
-            x="frist:T", y="name:N")
-        st.altair_chart(balken + striche)
-        st.caption("Balken: vom Infektionstag bis zum Ende der Inkubation. Goldener Strich: spritzen bis "
-                   "(80 % der Inkubation). Voller Balken: berechnet, heller gestrichelter Balken: Prognose.")
+            x="frist:T", y=zeile)
+        # Beschriftung über dem goldenen Strich, damit man sofort sieht, dass er die Frist ist
+        texte = alt.Chart(laufend).mark_text(dy=-17, color="#8A6D1F", fontWeight="bold", clip=True).encode(
+            x="frist:T", y=zeile, text="frist_text:N")
+        st.altair_chart((balken + striche + texte).properties(height=50 * len(laufend)))
+        st.caption("Balken: vom Infektionstag bis zum Ende der Inkubation. "
+                   "Voller Balken: berechnet, heller gestrichelter Balken: Prognose.")
 
 # Fusszeile
 st.divider()
