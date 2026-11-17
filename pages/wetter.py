@@ -101,8 +101,8 @@ def zeige_wetterdaten():
             st.dataframe(tabelle, use_container_width=True)
             st.caption("Quelle: Open-Meteo")
 
-    except requests.RequestException:
-        st.error("Wetterdaten konnten nicht geladen werden. Bitte später erneut versuchen.")
+    except Exception e:
+        st.error(f"Fehler beim Laden der Wetterdaten: {e}")
 
     # --- SEITENAUFBAU ---
     #Wichtig: Erst das Banner, dann die Wetterdaten aufrufen!
