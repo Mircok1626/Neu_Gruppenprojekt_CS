@@ -37,3 +37,28 @@ def zeige_banner():
         </p>
     </div>
     """, unsafe_allow_html=True) #unsafe_allow_html=True erlaubt HTML
+
+
+#st.cache_data merkt sich das Ergebnis für 1 Stunde (3600 Sekunden).
+#So fragen wir Open-Meteo nicht bei jedem Klick neu ab. 
+@st.cache_data(ttl=3600)
+def lade_wetter (tage_zurueck=21, tage_voraus=14):
+    """Holt Tageswerte (Temperatur, Regen) für Zizers von Open-Meteo. 
+
+    tage_zurueck: wie viele vergangene Tage geladen werden 
+    tage_voraus: wie viele Tage Prognose geladen werden 
+    Gibt eine Tabelle mit den Spalten, datum, temperatur, regen_mm
+    und ist_prognose zurück. 
+    """
+    #Adresse der Open-Meteo-Schnittstelle (kein API-Key nötig)
+    url = "https://ai.open-meteo.com/v1/forecast"
+
+    #Das fragen wir ab: Ort, Tageswerte, Zeitraum und Zeitzone
+    parameter = {
+        "latitude": ZIZERS_LAT, 
+        "longitude": ZIZERS_LON, 
+        "daily": "temperature_2m_mean, precipitation_sum",
+        "past_days": tage_zurueck, 
+        "forecast_days": tage_voraus, 
+        "timezone": "Europe/Zurich", 
+    }
