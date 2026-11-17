@@ -141,9 +141,6 @@ tankfuellungen = math.ceil(wasser_total / tank)
 # Formel 5: Mittel pro volle Tankfüllung
 mittel_pro_tank = mittel_pro_ha * tank / wasser_pro_ha
 
-# Formel 6: Konzentrierung (wie viel stärker die Brühe ist als normal)
-konzentrierung = basis / wasser_pro_ha
-
 # Kupfer, das mit dieser Spritzung pro Hektare ausgebracht wird
 kupfer_pro_ha = mittel_pro_ha * mittel["kupfer"]
 
@@ -160,8 +157,7 @@ with rechts:
 <h2 style="color:white;">{tankfuellungen} Tankfüllungen</h2>
 <p style="font-size:18px; margin:0;">
 Pro volle Füllung: <b>{tank} l Wasser + {mittel_pro_tank:.2f} {einheit} Mittel</b><br>
-Total: {mittel_total:.2f} {einheit} Mittel in {wasser_total:.0f} l Wasser<br>
-Konzentrierung: {konzentrierung:.1f}-fach
+Total: {mittel_total:.2f} {einheit} Mittel in {wasser_total:.0f} l Wasser
 </p>
 </div>
 """, unsafe_allow_html=True)
@@ -244,7 +240,6 @@ with st.expander("So wird gerechnet"):
 3. Wasser total = Wasser pro ha × Fläche = **{wasser_total:.0f} l**
 4. Tankfüllungen = Wasser total ÷ Tankgrösse, aufgerundet = **{tankfuellungen}**
 5. Mittel pro Tank = Mittel pro ha × Tankgrösse ÷ Wasser pro ha = **{mittel_pro_tank:.2f} {einheit}**
-6. Konzentrierung = Basisbrühmenge ÷ Wasser pro ha = **{konzentrierung:.1f}-fach**
 """)
 
 st.divider()
