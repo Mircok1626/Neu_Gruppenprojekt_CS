@@ -13,6 +13,7 @@ KI-Hinweis: Dieser Code wurde mit Claude (Anthropic, Claude Opus 5.5) am
 """
 
 import datetime as dt
+import sqlite3
 
 import altair as alt
 import pandas as pd
@@ -46,6 +47,10 @@ WARNSCHWELLE = 0.3
 # PLATZHALTER: Das Saisonende (Weichwerden) noch mit dem Winzer bestätigen.
 SAISON_START = (4, 1)    # 1. April
 SAISON_ENDE = (8, 31)    # 31. August
+
+
+# Formel 4 aus der Fachlogik: Ein Spritzbelag schützt etwa 10 Tage (mit dem Winzer bestätigen)
+SCHUTZ_TAGE = 10
 
 
 def in_saison(daten):
@@ -135,6 +140,42 @@ def erkenne_infektionen(tageswetter, modell, dauer_pro_monat):
     df["frist"] = (df["start"] + (df["ende"] - df["start"]) * 0.8).dt.floor("D")
     df["stufe"] = (df["risiko"] * 100).round().astype(int).astype(str) + " %"
     return df
+
+
+# ---------------------------------------------------------------------------
+# Verbindung zum Journal: Wurde schon gespritzt?
+# ---------------------------------------------------------------------------
+def lade_spritzungen():
+    """Holt alle Spritzungen aus dem Journal (gleiche Datenbank wie die Seite Journal)."""
+    try:
+        con = sqlite3.connect("daten/spritzplaner.db")
+        df = pd.read_sql_query("SELECT datum, mittel FROM spritzungen", con)
+        con.close()
+    except Exception:
+        # Gibt es die Tabelle noch nicht, ist einfach noch nichts gespritzt
+        df = pd.DataFrame(columns=["datum", "mittel"])
+    df["datum"] = pd.to_datetime(df["datum"])
+    return df.sort_values("datum")
+
+
+def pruefe_schutz(infektionen, spritzungen):
+    """Gibt jeder Infektion einen Status: geschützt, behandelt oder offen.
+
+    geschützt: Es wurde in den 10 Tagen vor der Infektion gespritzt, der Belag war schon da.
+    behandelt: Es wurde nach der Infektion gespritzt, aber noch vor der Frist.
+    offen:     Weder noch, der Winzer muss noch spritzen.
+    """
+    status = []
+    for _, infektion in infektionen.iterrows():
+        ergebnis = "offen"
+        for spritztag in spritzungen["datum"]:
+            if spritztag <= infektion["start"] <= spritztag + pd.Timedelta(days=SCHUTZ_TAGE):
+                ergebnis = "geschützt"
+            elif infektion["start"] < spritztag <= infektion["frist"] and ergebnis == "offen":
+                ergebnis = "behandelt"
+        status.append(ergebnis)
+    infektionen["status"] = status
+    return infektionen
 
 
 # ---------------------------------------------------------------------------
@@ -257,15 +298,37 @@ except Exception:
 # Das Modell sagt, an welchen Tagen es eine Infektion gibt
 infektionen = erkenne_infektionen(tageswetter, modell, dauer_pro_monat)
 
+# Spritzungen aus dem Journal holen (nur bis «heute», wichtig für den Demo-Modus)
+spritzungen = lade_spritzungen()
+spritzungen = spritzungen[spritzungen["datum"] <= pd.Timestamp(heute)]
+# Für jede Infektion prüfen: geschützt, behandelt oder offen?
+infektionen = pruefe_schutz(infektionen, spritzungen)
+
 # Laufende Inkubationen: Balken, die in die 14 Tage hineinreichen
 laufend = infektionen[(infektionen["start"] <= tage[-1]) & (infektionen["ende"] >= tage[0])].copy()
-# Offene Infektionen: schon passiert und Frist noch nicht vorbei
-offen = laufend[(laufend["start"] <= tage[0]) & (laufend["frist"] >= tage[0])]
+# Schon passierte Infektionen, deren Frist noch nicht vorbei ist
+aktuell = laufend[(laufend["start"] <= tage[0]) & (laufend["frist"] >= tage[0])]
+# Offen sind davon nur die, gegen die noch nicht gespritzt wurde
+offen = aktuell[aktuell["status"] == "offen"]
+abgedeckt = aktuell[aktuell["status"] != "offen"]
 
 # Jeden Tag bewerten
 bewertung = [bewerte_tag(tag, wetter, MITTEL[mittel], sonntag_sperren) for tag in tage]
 
 with bereich_ampel:
+    # Letzte Spritzung aus dem Journal anzeigen
+    if len(spritzungen) > 0:
+        letzte = spritzungen.iloc[-1]
+        geschuetzt_bis = letzte["datum"] + pd.Timedelta(days=SCHUTZ_TAGE)
+        if geschuetzt_bis >= pd.Timestamp(heute):
+            st.success(f"Letzte Spritzung laut Journal: {letzte['datum']:%d.%m.} mit {letzte['mittel']} "
+                       f"→ geschützt bis {geschuetzt_bis:%d.%m.}")
+        else:
+            st.warning(f"Letzte Spritzung laut Journal: {letzte['datum']:%d.%m.} mit {letzte['mittel']} "
+                       f"→ Schutz vorbei seit {geschuetzt_bis:%d.%m.}")
+    else:
+        st.caption("Noch keine Spritzung im Journal erfasst.")
+
     # Frist-Box (weinrot): die nächste Frist bestimmt die Planung
     if len(offen) > 0:
         infektion = offen.sort_values("frist").iloc[0]
@@ -293,7 +356,11 @@ with bereich_ampel:
     else:
         frist, gute = None, []
         if in_saison(pd.Series([pd.Timestamp(heute)])).iloc[0]:
-            st.info("Keine offene Infektion. Spritzen ist im Moment nicht nötig.")
+            if len(abgedeckt) > 0:
+                st.info(f"Keine offene Infektion. {len(abgedeckt)} Infektion(en) sind durch "
+                        "deine Spritzungen abgedeckt. Spritzen ist im Moment nicht nötig.")
+            else:
+                st.info("Keine offene Infektion. Spritzen ist im Moment nicht nötig.")
         else:
             st.info("Ausserhalb der Spritzsaison (April bis August). "
                     "Gegen Falschen Mehltau wird jetzt nicht gespritzt.")
@@ -309,6 +376,8 @@ with bereich_ampel:
             marken.append("letzte Chance")
         if tag == frist:
             marken.append("Frist")
+        if tag in list(spritzungen["datum"]):
+            marken.append("gespritzt")
 
         farbe, text = FARBEN[stufe], AMPEL[stufe] + (f"<br>ab {start} Uhr" if stufe < 2 else "")
         rahmen = f"3px solid {GOLD}" if len(gute) > 0 and tag == gute[0] else "1px solid #CCCCCC"
@@ -328,7 +397,8 @@ with bereich_inkubation:
     if len(laufend) == 0:
         st.write("Keine laufenden Inkubationen in diesen 14 Tagen.")
     else:
-        laufend["name"] = laufend["start"].dt.strftime("%d.%m.") + " (" + laufend["stufe"] + ")"
+        # Name des Balkens, z. B. "06.08. (71 %) · geschützt"
+        laufend["name"] = laufend["start"].dt.strftime("%d.%m.") + " (" + laufend["stufe"] + ") · " + laufend["status"]
         laufend["art"] = "berechnet"
         laufend.loc[laufend["start"] > tage[0], "art"] = "Prognose"
         achse = alt.X("start:T", title=None, scale=alt.Scale(domain=[tage[0], tage[-1] + pd.Timedelta(days=1)]),
