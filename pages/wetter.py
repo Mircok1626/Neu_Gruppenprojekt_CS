@@ -29,10 +29,10 @@ def zeige_banner():
         border-radius: 20px;
         margin-bottom: 24px;
     ">
-        <h1 style=*margin: 0; font-size: 36px; color: white;">
+        <h1 style="margin: 0; font-size: 36px; color: white;">
             Wetter
         </h1>
-        <p style="margin: 8px 0 0 0; font-size: 18p<; color: #F8E8EC;">
+        <p style="margin: 8px 0 0 0; font-size: 18px; color: #F8E8EC;">
             Warum warnt die App? Hier siehst du die Ursachen hinter jedem Alarm.
         </p>
     </div>
@@ -51,19 +51,19 @@ def lade_wetter (tage_zurueck=21, tage_voraus=14):
     und ist_prognose zurück. 
     """
     #Adresse der Open-Meteo-Schnittstelle (kein API-Key nötig)
-    url = "https://ai.open-meteo.com/v1/forecast"
+    url = "https://api.open-meteo.com/v1/forecast"
 
     #Das fragen wir ab: Ort, Tageswerte, Zeitraum und Zeitzone
     parameter = {
         "latitude": ZIZERS_LAT, 
         "longitude": ZIZERS_LON, 
-        "daily": "temperature_2m_mean, precipitation_sum",
+        "daily": "temperature_2m_mean,precipitation_sum",
         "past_days": tage_zurueck, 
         "forecast_days": tage_voraus, 
         "timezone": "Europe/Zurich", 
     }
     #Anfrage senden; timeout=10 heisst: nach 10 Sekunden aufgeben 
-    antwort = request.get(url, params=parameter, timeout=10)
+    antwort = requests.get(url, params=parameter, timeout=10)
     antwort.raise_for_status() #löst einen Fehler aus, falls etwas schiefging
 
     #Die Antwort ist JSON; wir brauchen nur den Teil "daily"
@@ -77,7 +77,7 @@ def lade_wetter (tage_zurueck=21, tage_voraus=14):
     })
 
     #Alles nach heute ist Prognose (brauchen wir später für die "heut"-Linie)
-    heute = pd.Timestamp.today().normaliz()
+    heute = pd.Timestamp.today().normalize()
     tabelle["ist_prognose"] = tabelle["datum"] > heute
 
     return tabelle 
