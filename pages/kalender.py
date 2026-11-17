@@ -1,282 +1,195 @@
-#hier kommt der Code für den Kalender hinein
-import streamlit as st
-st.title("Kalender")
+#Hier wird die Seite Kalender codiert.
+"""Kalender: Wann kann ich spritzen?
 
-# Die Seite verbindet die Frist einer Infektion mit der Wetterprognose (Open-Meteo API) und zeigt für die nächsten 14 Tage eine Ampel: grün = geeignet, gelb = knapp, rot = nicht möglich.
+Die Seite verbindet die Frist jeder Infektion (Agrometeo-Daten) mit der
+Wetterprognose (Open-Meteo API) und zeigt für 14 Tage eine Ampel mit Startzeit.
 
+Hinweis zur KI: Dieser Code wurde mit Hilfe von Claude (Anthropic, Modell
+Claude Opus 5.5, 17.11.2026) erstellt und von uns geprüft und angepasst.
+"""
 
 import datetime as dt
 
 import pandas as pd
 import requests
+import streamlit as st
 
-
-
-
-# Feste Werte (Konstanten)
-
-
-# Koordinaten der Agrometeo-Station Zizers
-BREITE = 46.94
-LAENGE = 9.56
-
-# Mögliche Mittel. True = hitzeempfindlich (nur dann zählt Hitze in der Ampel)
-MITTEL = {
-    "Kupfer": False,
-    "Folpet": False,
-    "Schwefel (hitzeempfindlich)": True,
-}
-
-# Startwerte für die Grenzwerte der Ampel (noch mit dem Winzer bestätigen)
-STANDARD_GRENZEN = {
-    "regen_gelb": 0.5,   # mm Regen in den 6 Stunden nach dem Start
-    "regen_rot": 2.0,
-    "wind_gelb": 11,     # km/h, stärkste Windgeschwindigkeit
-    "wind_rot": 19,
-    "hitze_gelb": 25,    # Grad Celsius, höchste Temperatur
-    "hitze_rot": 30,
-}
-
+# Mittel und ob sie hitzeempfindlich sind (nur dann zählt Hitze in der Ampel)
+MITTEL = {"Folpet 80 WG": False, "Kupfer": False, "Schwefel": True}
+EINHEITEN = {"Regen": "mm", "Wind": "km/h", "Hitze": "°C"}
 WOCHENTAGE = ["Mo", "Di", "Mi", "Do", "Fr", "Sa", "So"]
-AMPEL = ["🟢 geeignet", "🟡 knapp", "🔴 nicht möglich"]
+FARBEN = ["#C8E6C9", "#FFF59D", "#FFCDD2"]  # grün = geeignet, gelb = knapp, rot = nicht möglich
 
 
+@st.cache_data
+def lade_infektionen(jahr):
+    """Liest die Agrometeo-Daten und gibt jede Infektion mit Inkubationsende und Frist zurück."""
+    daten = pd.read_csv(f"daten/zizers_{jahr}.csv", parse_dates=["datum"])
+    daten = daten[daten["infektion_staerke"] > 0]
 
-# Funktionen
+    infektionen = []
+    for _, zeile in daten.iterrows():
+        start = zeile["datum"].date()
+        if pd.isna(zeile["inkubation_aktuell"]):
+            ende = start + dt.timedelta(days=10)  # Annahme, wenn Agrometeo noch kein Ende angibt
+        else:
+            tag, monat = zeile["inkubation_aktuell"].split(".")[:2]  # z. B. "20.05."
+            ende = dt.date(jahr, int(monat), int(tag))
+        dauer = (ende - start).days
+        infektionen.append({
+            "start": start,
+            "ende": ende,
+            "frist": start + dt.timedelta(days=int(dauer * 0.8)),  # spritzen bis = 80 % der Inkubation
+            "stufe": "!" * int(zeile["infektion_staerke"]),
+            "prognose": zeile["aus_wettervorhersage"] == 1,
+        })
+    return infektionen
 
 
-@st.cache_data(ttl=3600)  # Wetter höchstens einmal pro Stunde neu laden
-def lade_wetter():
-    """Lädt die stündliche Wetterprognose für 14 Tage von Open-Meteo.
-
-    Gibt eine Tabelle (DataFrame) mit einer Zeile pro Stunde zurück.
-    """
-    url = "https://api.open-meteo.com/v1/forecast"
-    parameter = {
-        "latitude": BREITE,
-        "longitude": LAENGE,
-        "hourly": "temperature_2m,precipitation,wind_speed_10m",
-        "forecast_days": 14,
-        "timezone": "Europe/Zurich",
-    }
-    antwort = requests.get(url, params=parameter, timeout=10)
-    antwort.raise_for_status()  # Fehler, falls die API nicht antwortet
-
-    wetter = pd.DataFrame(antwort.json()["hourly"])
-    wetter["time"] = pd.to_datetime(wetter["time"])
-    wetter["datum"] = wetter["time"].dt.date
-    wetter["stunde"] = wetter["time"].dt.hour
+@st.cache_data
+def lade_wetter(von, bis):
+    """Lädt das stündliche Wetter für Zizers von Open-Meteo."""
+    if bis < dt.date.today():
+        url = "https://historical-forecast-api.open-meteo.com/v1/forecast"  # vergangene Tage
+    else:
+        url = "https://api.open-meteo.com/v1/forecast"  # aktuelle Prognose
+    parameter = {"latitude": 46.94, "longitude": 9.56, "timezone": "Europe/Zurich",
+                 "hourly": "precipitation,wind_speed_10m,temperature_2m",
+                 "start_date": str(von), "end_date": str(bis)}
+    wetter = pd.DataFrame(requests.get(url, params=parameter, timeout=10).json()["hourly"])
+    wetter["datum"] = pd.to_datetime(wetter["time"]).dt.date
     return wetter
 
 
-def stufe(wert, gelb, rot):
-    """Übersetzt einen Messwert in eine Ampelstufe: 0 = gruen, 1 = gelb, 2 = rot."""
-    if wert >= rot:
-        return 2
-    elif wert >= gelb:
-        return 1
-    else:
-        return 0
+def bewerte_tag(stunden, tag, grenzen, sonntag_sperren, hitze_zaehlt):
+    """Gibt für einen Tag die Ampelstufe (0, 1, 2), die beste Startzeit und die Gründe zurück."""
+    regen = stunden["precipitation"].tolist()
+    wind = stunden["wind_speed_10m"].tolist()
+    temp = stunden["temperature_2m"].tolist()
 
+    # Beste Startzeit: Stunde zwischen 6 und 14 Uhr mit am wenigsten Regen in den 6 Stunden danach
+    start = 6
+    for stunde in range(7, 15):
+        if sum(regen[stunde:stunde + 6]) < sum(regen[start:start + 6]):
+            start = stunde
 
-def beste_startzeit(tag):
-    """Sucht die beste Startzeit zwischen 6 und 14 Uhr.
-
-    Das ist die Stunde, nach der in den 6 Stunden danach am wenigsten
-    Regen fällt, damit der Belag antrocknen kann.
-    Gibt die Stunde und die Wetterdaten dieser 6 Stunden zurück.
-    """
-    beste_stunde = 6
-    wenigster_regen = 9999
-
-    for stunde in range(6, 15):
-        fenster = tag[(tag["stunde"] >= stunde) & (tag["stunde"] < stunde + 6)]
-        regen = fenster["precipitation"].sum()
-        if regen < wenigster_regen:
-            wenigster_regen = regen
-            beste_stunde = stunde
-
-    bestes_fenster = tag[(tag["stunde"] >= beste_stunde) & (tag["stunde"] < beste_stunde + 6)]
-    return beste_stunde, bestes_fenster
-
-
-def bewerte_tag(datum, tag, grenzen, sonntag_sperren, hitze_zaehlt):
-    """Bewertet einen Tag mit der Ampel.
-
-    Der schlechteste Wert (Regen, Wind, Hitze, Sonntag) bestimmt die Farbe.
-    Gibt ein Dictionary mit Datum, Stufe, Startzeit und Gruenden zurueck.
-    """
-    startzeit, fenster = beste_startzeit(tag)
-    regen = fenster["precipitation"].sum()
-    wind = fenster["wind_speed_10m"].max()
-    hitze = fenster["temperature_2m"].max()
-
-    stufen = []
-    gruende = []
-
-    # Regen
-    s = stufe(regen, grenzen["regen_gelb"], grenzen["regen_rot"])
-    stufen.append(s)
-    if s > 0:
-        gruende.append(f"Regen {regen:.1f} mm")
-
-    # Wind
-    s = stufe(wind, grenzen["wind_gelb"], grenzen["wind_rot"])
-    stufen.append(s)
-    if s > 0:
-        gruende.append(f"Wind {wind:.0f} km/h")
-
-    # Hitze (zählt nur bei hitzeempfindlichem Mittel)
+    werte = {"Regen": sum(regen[start:start + 6]), "Wind": max(wind[start:start + 6])}
     if hitze_zaehlt:
-        s = stufe(hitze, grenzen["hitze_gelb"], grenzen["hitze_rot"])
-        stufen.append(s)
-        if s > 0:
-            gruende.append(f"Hitze {hitze:.0f} °C")
+        werte["Hitze"] = max(temp[start:start + 6])
 
-    # Sonntag (weekday() == 6 bedeutet Sonntag)
-    if sonntag_sperren and datum.weekday() == 6:
-        stufen.append(2)
+    # Der schlechteste Wert bestimmt die Farbe
+    stufe = 0
+    gruende = []
+    for name, wert in werte.items():
+        gelb, rot = grenzen[name]
+        if wert >= gelb:
+            stufe = max(stufe, 2 if wert >= rot else 1)
+            gruende.append(f"{name} {wert:.1f} {EINHEITEN[name]}")
+    if sonntag_sperren and tag.weekday() == 6:
+        stufe = 2
         gruende.append("Sonntag")
-
-    if len(gruende) == 0:
-        gruende.append("trocken, ruhig")
-
-    return {
-        "datum": datum,
-        "stufe": max(stufen),  # der schlechteste Wert bestimmt die Farbe
-        "start": startzeit,
-        "gruende": gruende,
-    }
+    return stufe, start, gruende
 
 
-# Seite aufbauen
-
-
-#Die Ampel verbindet die Frist der Infektion mit der Wetterprognose und zeigt den besten Tag vor Ablauf der Frist
-
-heute = dt.date.today()
+st.title("Kalender: Wann kann ich spritzen?")
 
 # Planungsleiste
-st.subheader("Planung")
 spalte1, spalte2, spalte3 = st.columns(3)
+heute = spalte1.date_input("Heute ist der …", value=dt.date(2026, 5, 9), format="DD.MM.YYYY",
+                           min_value=dt.date(2024, 1, 1), max_value=dt.date.today())
+mittel = spalte2.selectbox("Geplantes Mittel", list(MITTEL))
+sonntag_sperren = spalte3.checkbox("Sonntag sperren", value=True)
 
-with spalte1:
-    mittel = st.selectbox("Geplantes Mittel", list(MITTEL.keys()))
-with spalte2:
-    frist = st.date_input("Spritzen bis (Frist)",
-                          value=heute + dt.timedelta(days=7),
-                          format="DD.MM.YYYY")
-with spalte3:
-    st.write("")  # kleiner Abstand, damit das Häkchen auf gleicher Hoehe ist
-    sonntag_sperren = st.checkbox("Sonntag sperren", value=True)
+with st.expander("Grenzwerte der Ampel (gelb ab, rot ab)"):
+    grenzen = {"Regen": st.slider("Regen in den 6 Stunden nach Start (mm)", 0.0, 10.0, (0.5, 2.0)),
+               "Wind": st.slider("Wind (km/h)", 0, 50, (15, 25)),
+               "Hitze": st.slider("Hitze (°C)", 15, 40, (25, 30))}
 
-hitze_zaehlt = MITTEL[mittel]
-if hitze_zaehlt:
-    st.warning(f"{mittel} kann bei Hitze die Blätter verbrennen. Hitze zählt deshalb in der Ampel.")
-
-# Grenzwerte der Ampel
-with st.expander("Grenzwerte der Ampel anpassen"):
-    g1, g2, g3 = st.columns(3)
-    grenzen = {}
-    with g1:
-        grenzen["regen_gelb"] = st.number_input("Regen gelb ab (mm)", value=STANDARD_GRENZEN["regen_gelb"], step=0.5)
-        grenzen["regen_rot"] = st.number_input("Regen rot ab (mm)", value=STANDARD_GRENZEN["regen_rot"], step=0.5)
-    with g2:
-        grenzen["wind_gelb"] = st.number_input("Wind gelb ab (km/h)", value=STANDARD_GRENZEN["wind_gelb"], step=1)
-        grenzen["wind_rot"] = st.number_input("Wind rot ab (km/h)", value=STANDARD_GRENZEN["wind_rot"], step=1)
-    with g3:
-        grenzen["hitze_gelb"] = st.number_input("Hitze gelb ab (°C)", value=STANDARD_GRENZEN["hitze_gelb"], step=1)
-        grenzen["hitze_rot"] = st.number_input("Hitze rot ab (°C)", value=STANDARD_GRENZEN["hitze_rot"], step=1)
-
-# Wetter laden 
+# Daten laden
+tage = [heute + dt.timedelta(days=i) for i in range(14)]
+infektionen = lade_infektionen(heute.year)
 try:
-    wetter = lade_wetter()
+    wetter = lade_wetter(tage[0], tage[-1])
 except Exception:
-    st.error("Die Wetterdaten von Open-Meteo konnten nicht geladen werden. Bitte später nochmals versuchen.")
-    st.stop()  # Rest der Seite nicht ausführen
+    st.error("Die Wetterdaten von Open-Meteo konnten nicht geladen werden.")
+    st.stop()
 
-#  Jeden Tag bewerten 
-tage = []
-for datum in sorted(wetter["datum"].unique()):
-    tag = wetter[wetter["datum"] == datum]
-    tage.append(bewerte_tag(datum, tag, grenzen, sonntag_sperren, hitze_zaehlt))
+# Infektionen, die in diesen 14 Tagen in der Inkubation sind, und die nächste offene Frist
+laufend = [i for i in infektionen if i["start"] <= tage[-1] and i["ende"] >= heute]
+offen = [i for i in laufend if i["start"] <= heute <= i["frist"]]
+frist = min([i["frist"] for i in offen]) if offen else None
 
-# Grüne Tage vor (oder an) der Frist suchen
-gute_tage = [t for t in tage if t["stufe"] == 0 and heute <= t["datum"] <= frist]
+# Jeden Tag bewerten und die grünen Tage vor der Frist suchen
+bewertung = {}
+for tag in tage:
+    bewertung[tag] = bewerte_tag(wetter[wetter["datum"] == tag], tag, grenzen,
+                                 sonntag_sperren, MITTEL[mittel])
+gruene = [t for t in tage if frist and t <= frist and bewertung[t][0] == 0]
 
-empfohlen = None
-letzte_chance = None
-if len(gute_tage) > 0:
-    empfohlen = gute_tage[0]["datum"]       # erster grüner Tag vor der Frist
-    letzte_chance = gute_tage[-1]["datum"]  # letzter grüner Tag vor der Frist
-
-#  Frist-Box 
-if frist < heute:
-    st.error(f"Die Frist ({frist:%d.%m.}) ist bereits abgelaufen.")
-elif empfohlen is not None:
-    start = gute_tage[0]["start"]
-    st.success(
-        f"**Spritzen bis {WOCHENTAGE[frist.weekday()]}, {frist:%d.%m.}** – "
-        f"noch {len(gute_tage)} gute Tage. "
-        f"Empfohlen: **{WOCHENTAGE[empfohlen.weekday()]}, {empfohlen:%d.%m.} ab {start} Uhr**."
-    )
+# Frist-Box
+if frist is None:
+    st.success("Keine offene Infektion. Im Moment muss nicht gespritzt werden.")
+elif gruene:
+    st.error(f"**Spritzen bis {WOCHENTAGE[frist.weekday()]}, {frist:%d.%m.}**. "
+             f"Davor gibt es noch {len(gruene)} gute Tage. Empfohlen: "
+             f"**{WOCHENTAGE[gruene[0].weekday()]}, {gruene[0]:%d.%m.} ab {bewertung[gruene[0]][1]} Uhr**.")
 else:
-    st.error(f"Spritzen bis {frist:%d.%m.}: Vor der Frist gibt es keinen grünen Tag. "
-             "Prüfe die gelben Tage.")
+    st.error(f"**Spritzen bis {frist:%d.%m.}**. Vor der Frist gibt es keinen grünen Tag, prüfe die gelben Tage.")
 
-#  Spritzfenster: 14 Kacheln (2 Reihen mit je 7 Tagen) 
-st.subheader("Spritzfenster – 14 Tage")
+# Spritzfenster: 14 Kacheln in zwei Reihen
+st.subheader("Spritzfenster: 14 Tage")
+for woche in [tage[:7], tage[7:]]:
+    for spalte, tag in zip(st.columns(7), woche):
+        stufe, start, gruende = bewertung[tag]
+        empfohlen = gruene and tag == gruene[0]
 
-for reihe in range(2):
-    spalten = st.columns(7)
-    for i in range(7):
-        index = reihe * 7 + i
-        if index >= len(tage):
-            break
-        tag = tage[index]
-        datum = tag["datum"]
+        marken = []
+        if tag == heute:
+            marken.append("heute")
+        if empfohlen:
+            marken.append("⭐ empfohlen")
+        elif gruene and tag == gruene[-1]:
+            marken.append("letzte Chance")
+        if tag == frist:
+            marken.append("Frist")
+        elif frist and tag > frist:
+            marken.append("nach Frist")
 
-        with spalten[i]:
-            with st.container(border=True):
-                st.markdown(f"**{WOCHENTAGE[datum.weekday()]} {datum:%d.%m.}**")
+        farbe = "#E0E0E0" if frist and tag > frist else FARBEN[stufe]
+        rahmen = "3px solid #C9A227" if empfohlen else "1px solid #BBBBBB"
+        startzeit = f"ab {start} Uhr" if stufe < 2 else "nicht möglich"
+        text = ", ".join(gruende)
+        markierung = "<br>".join(marken)
+        spalte.markdown(f"""
+        <div style="background-color: {farbe}; border: {rahmen}; border-radius: 10px;
+                    padding: 8px; height: 160px; color: black; font-size: 14px;">
+            <b>{WOCHENTAGE[tag.weekday()]} {tag:%d.%m.}</b><br>{startzeit}<br>
+            <small>{text}</small><br><b><small>{markierung}</small></b>
+        </div>""", unsafe_allow_html=True)
+st.caption("Grün = geeignet, gelb = knapp, rot = nicht möglich, grau = nach Frist. "
+           "Goldener Rahmen = empfohlener Tag (erster grüner Tag vor der Frist).")
 
-                if datum > frist:
-                    st.write("⚪ nach Frist")
-                else:
-                    st.write(AMPEL[tag["stufe"]])
-                    if tag["stufe"] < 2:
-                        st.caption(f"ab {tag['start']} Uhr")
+# Laufende Inkubationen: ein Balken pro Infektion, die 14 Tage als Spalten
+st.subheader("Laufende Inkubationen")
+if laufend:
+    zeilen = {}
+    for i in laufend:
+        balken = "░░░░" if i["prognose"] or i["start"] > heute else "████"
+        zeile = []
+        for tag in tage:
+            if tag == i["frist"]:
+                zeile.append("🟡")
+            elif i["start"] <= tag <= i["ende"]:
+                zeile.append(balken)
+            else:
+                zeile.append("")
+        zeilen[f"Infektion {i['start']:%d.%m.} {i['stufe']}"] = zeile
+    st.dataframe(pd.DataFrame.from_dict(zeilen, orient="index", columns=[f"{t:%d.%m.}" for t in tage]))
+    st.caption("████ berechnete Infektion, ░░░░ Infektion aus der Prognose (unsicher), "
+               "🟡 spritzen bis (80 % der Inkubation)")
+else:
+    st.info("In diesen 14 Tagen läuft keine Inkubation.")
 
-                st.caption(", ".join(tag["gruende"]))
-
-                # Markierungen
-                if datum == heute:
-                    st.caption("📍 heute")
-                if datum == empfohlen:
-                    st.caption("⭐ empfohlen")
-                elif datum == letzte_chance:
-                    st.caption("⏳ letzte Chance")
-                if datum == frist:
-                    st.caption("🏁 Frist")
-
-# Grafik: Wetter der naechsten 14 Tage 
-st.subheader("Wetterprognose – 14 Tage")
-pro_tag = wetter.groupby("datum").agg(
-    regen_mm=("precipitation", "sum"),
-    max_wind_kmh=("wind_speed_10m", "max"),
-    max_temp_c=("temperature_2m", "max"),
-)
-pro_tag.index = [f"{d:%d.%m.}" for d in pro_tag.index]
-
-grafik1, grafik2 = st.columns(2)
-with grafik1:
-    st.caption("Regen pro Tag (mm)")
-    st.bar_chart(pro_tag["regen_mm"])
-with grafik2:
-    st.caption("Höchsttemperatur (°C) und stärkster Wind (km/h)")
-    st.line_chart(pro_tag[["max_temp_c", "max_wind_kmh"]])
-
-# --- Fusszeile -------------------------------------------------------------
 st.divider()
-st.caption("Datenquellen: Wetter stündlich von Open-Meteo, Infektionen von Agrometeo. "
+st.caption("Datenquellen: Wetter stündlich von Open-Meteo, Infektionen von Agrometeo (Station Zizers). "
            "Die App ist eine Entscheidungshilfe und keine offizielle Pflanzenschutzberatung.")
