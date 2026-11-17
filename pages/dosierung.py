@@ -176,7 +176,7 @@ Total: {mittel_total:.2f} {einheit} Mittel in {wasser_total:.0f} l Wasser
                 "menge": round(mittel_total, 2),
                 "einheit": einheit,
             }
-            st.success("Gespeichert. Das Journal kann die Werte übernehmen.")
+            st.switch_page("pages/journal.py")   # direkt zum Journal wechseln
 
         # Button 2: Rezept als Textdatei herunterladen, um es auszudrucken.
         rezept_text = (
