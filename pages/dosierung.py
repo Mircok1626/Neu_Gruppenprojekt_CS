@@ -60,5 +60,34 @@ MITTEL = {
 KUPFER_LIMITE = 4.0   # kg Kupfer pro ha und Jahr (ÖLN)
 HITZE_GRENZE = 30     # °C, PLATZHALTER
 
+# Titel und Untertitel
 st.title("Dosierung – wie viel Mittel und Wasser brauche ich?")
 st.caption("Aus Rebstadium, Mittel und Fläche wird ein Tankrezept berechnet.")
+
+# Die Seite wird in zwei Spalten geteilt: links Eingaben, rechts Resultat.
+links, rechts = st.columns(2, gap="large")
+
+# Die Seite wird in zwei Spalten geteilt: links Eingaben, rechts Resultat.
+links, rechts = st.columns(2, gap="large")
+
+with links:
+    st.subheader("Eingaben")
+
+    # Auswahlfelder: Der Benutzer wählt einen Eintrag aus der Liste.
+    # index=3 heisst: «Blüte» (4. Eintrag) ist vorausgewählt.
+    stadium = st.selectbox("Rebstadium", list(STADIEN.keys()), index=3)
+    mittel_name = st.selectbox("Mittel", list(MITTEL.keys()))
+
+    # Zahlenfelder: min_value = kleinster Wert, value = Startwert
+    flaeche = st.number_input("Fläche (ha)", min_value=0.01, value=0.8, step=0.1)
+    wasser_pro_ha = st.number_input("Wasser des Sprühgeräts (l/ha)", min_value=50, value=300, step=25)
+    tank = st.number_input("Tankgrösse (l)", min_value=20, value=200, step=10)
+    temperatur = st.number_input("Höchsttemperatur am Spritztag (°C)", value=24)
+
+    st.caption("Fläche, Wasser und Temperatur werden später automatisch "
+               "von den Seiten Parzelle und Kalender übernommen.")
+
+# Die Angaben zum gewählten Mittel und Stadium aus Schritt 1 holen.
+mittel = MITTEL[mittel_name]
+basis = STADIEN[stadium]
+einheit = mittel["einheit"]
