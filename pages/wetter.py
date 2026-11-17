@@ -1,13 +1,7 @@
-#hier kommt der Code für das Wetter hinein
+#hier kommt der Code für das Wetter hinein 
 import streamlit as st
-st.title("Wetter")
-
-# Hier wird die Wetter-Seite codiert.
-"""Wetter-Seite des Spritzplaners: Warum warnt die App?"""
-
-import pandas as pd #pandas: Tabellen (DataFrames) für die Wetterdaten
-import requests #requests: damit Python eine Internetseite/API abfragen kann
-import streamlit as st 
+import pandas as pd
+import requests 
 
 #Koordinaten der Station Zizers (für die Open-Meteo-Abfrage)
 ZIZERS_LAT = 46.93
