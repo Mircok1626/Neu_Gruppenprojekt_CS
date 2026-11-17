@@ -197,7 +197,7 @@ with bereich_inkubation:
         achse = alt.X("start:T", title=None, scale=alt.Scale(domain=[tage[0], tage[-1] + pd.Timedelta(days=1)]),
                       axis=alt.Axis(format="%d.%m.", tickCount=14))
         balken = alt.Chart(laufend).mark_bar(color=WEINROT, stroke=WEINROT, clip=True, height=20).encode(
-            x=achse, x2="ende:T", y=alt.Y("name:N", title="Infektion"),
+            x=achse, x2="ende:T", y=alt.Y("name:N", title="Infektion", sort=alt.SortField("start")),
             opacity=alt.Opacity("art:N", title=None, scale=alt.Scale(domain=["berechnet", "Prognose"], range=[0.9, 0.2])),
             strokeDash=alt.StrokeDash("art:N", title=None, scale=alt.Scale(domain=["berechnet", "Prognose"], range=[[1, 0], [5, 3]])))
         striche = alt.Chart(laufend).mark_tick(color=GOLD, thickness=4, size=20, clip=True).encode(
