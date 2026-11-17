@@ -2,15 +2,11 @@
 import streamlit as st
 st.title("Kalender")
 
-# Hier wird die Seite "Kalender" codiert.
-"""Kalender-Seite des Spritzplaners: Wann kann ich spritzen?
+"""Wann kann ich spritzen?
 
 Die Seite verbindet die Frist einer Infektion mit der Wetterprognose
 (Open-Meteo API) und zeigt fuer die naechsten 14 Tage eine Ampel:
 gruen = geeignet, gelb = knapp, rot = nicht moeglich.
-
-KI-Hinweis: Der Grundaufbau dieses Codes wurde mit Claude (Anthropic,
-Modell Claude Opus 5.5, 17.11.2026) generiert und danach von uns angepasst.
 """
 
 import datetime as dt
@@ -20,22 +16,22 @@ import requests
 import streamlit as st
 
 
-# ---------------------------------------------------------------------------
-# Feste Werte (Konstanten)
-# ---------------------------------------------------------------------------
 
-# Koordinaten der Agrometeo-Station Zizers (Buendner Herrschaft)
+# Feste Werte (Konstanten)
+
+
+# Koordinaten der Agrometeo-Station Zizers
 BREITE = 46.94
 LAENGE = 9.56
 
-# Moegliche Mittel. True = hitzeempfindlich (nur dann zaehlt Hitze in der Ampel)
+# Mögliche Mittel. True = hitzeempfindlich (nur dann zählt Hitze in der Ampel)
 MITTEL = {
     "Kupfer": False,
     "Folpet": False,
     "Schwefel (hitzeempfindlich)": True,
 }
 
-# Startwerte fuer die Grenzwerte der Ampel (noch mit dem Winzer bestaetigen)
+# Startwerte für die Grenzwerte der Ampel (noch mit dem Winzer bestätigen)
 STANDARD_GRENZEN = {
     "regen_gelb": 0.5,   # mm Regen in den 6 Stunden nach dem Start
     "regen_rot": 2.0,
@@ -49,11 +45,11 @@ WOCHENTAGE = ["Mo", "Di", "Mi", "Do", "Fr", "Sa", "So"]
 AMPEL = ["🟢 geeignet", "🟡 knapp", "🔴 nicht möglich"]
 
 
-# ---------------------------------------------------------------------------
-# Funktionen
-# ---------------------------------------------------------------------------
 
-@st.cache_data(ttl=3600)  # Wetter hoechstens einmal pro Stunde neu laden
+# Funktionen
+
+
+@st.cache_data(ttl=3600)  # Wetter höchstens einmal pro Stunde neu laden
 def lade_wetter():
     """Laedt die stuendliche Wetterprognose fuer 14 Tage von Open-Meteo.
 
@@ -212,14 +208,14 @@ for datum in sorted(wetter["datum"].unique()):
     tag = wetter[wetter["datum"] == datum]
     tage.append(bewerte_tag(datum, tag, grenzen, sonntag_sperren, hitze_zaehlt))
 
-# Gruene Tage vor (oder an) der Frist suchen
+# Grüne Tage vor (oder an) der Frist suchen
 gute_tage = [t for t in tage if t["stufe"] == 0 and heute <= t["datum"] <= frist]
 
 empfohlen = None
 letzte_chance = None
 if len(gute_tage) > 0:
-    empfohlen = gute_tage[0]["datum"]       # erster gruener Tag vor der Frist
-    letzte_chance = gute_tage[-1]["datum"]  # letzter gruener Tag vor der Frist
+    empfohlen = gute_tage[0]["datum"]       # erster grüner Tag vor der Frist
+    letzte_chance = gute_tage[-1]["datum"]  # letzter grüner Tag vor der Frist
 
 # --- Frist-Box -------------------------------------------------------------
 if frist < heute:
