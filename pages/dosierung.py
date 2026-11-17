@@ -32,37 +32,34 @@ NACH_BLUETE = ["Nachblüte", "nur Traubenzone"]
 # Mittel gegen Falschen Mehltau.
 # konzentration    = Konzentration in Prozent
 # einheit          = "kg" oder "l"
-# max_behandlungen = wie oft pro Jahr erlaubt (0 = keine Limite)
-# kupfer           = kg Kupfer pro kg oder l Mittel (0 = kein Kupfer)
 # hitzeempfindlich = PLATZHALTER, noch mit dem Winzer bestätigen
 # stadien          = in welchen Stadien das Mittel erlaubt ist
 # hinweis          = besondere Auflage aus der Agroscope-Liste
 MITTEL = {
     "Folpet 80 WG": {
-        "konzentration": 0.125, "einheit": "kg", "max_behandlungen": 0,
-        "kupfer": 0, "hitzeempfindlich": False, "stadien": ALLE,
+        "konzentration": 0.125, "einheit": "kg",
+        "hitzeempfindlich": False, "stadien": ALLE,
         "hinweis": "",
     },
     "Quadris Max": {
-        "konzentration": 0.2, "einheit": "l", "max_behandlungen": 3,
-        "kupfer": 0, "hitzeempfindlich": False, "stadien": ALLE,
+        "konzentration": 0.2, "einheit": "l",
+        "hitzeempfindlich": False, "stadien": ALLE,
         "hinweis": "Nicht in Grundwasserschutzzonen S2 ausbringen.",
     },
     "Ridomil Vino": {
-        "konzentration": 0.225, "einheit": "kg", "max_behandlungen": 3,
-        "kupfer": 0, "hitzeempfindlich": False,
+        "konzentration": 0.225, "einheit": "kg",
+        "hitzeempfindlich": False,
         "stadien": ["1. Vorblüte", "2. Vorblüte", "Blüte", "Nachblüte"],
         "hinweis": "Nur bis spätestens Ende Juli einsetzen.",
     },
     "Kocide Opti (Kupfer)": {
-        "konzentration": 0.0625, "einheit": "kg", "max_behandlungen": 0,
-        "kupfer": 0.30, "hitzeempfindlich": True, "stadien": NACH_BLUETE,
+        "konzentration": 0.0625, "einheit": "kg",
+        "hitzeempfindlich": True, "stadien": NACH_BLUETE,
         "hinweis": "Kupfer erst nach der Blüte und bis spätestens Mitte August. "
-                   "Nur in Mischung mit Folpet.",
+                   "Nur in Mischung mit Folpet. Max. 4 kg Kupfer pro ha und Jahr (ÖLN).",
     },
 }
 
-KUPFER_LIMITE = 4.0   # kg Kupfer pro ha und Jahr (ÖLN)
 HITZE_GRENZE = 30     # °C, PLATZHALTER
 
 # Koordinaten der Station Zizers, gleich wie auf der Wetter-Seite
@@ -191,8 +188,6 @@ tankfuellungen = math.ceil(wasser_total / tank)
 # Formel 5: Mittel pro volle Tankfüllung
 mittel_pro_tank = mittel_pro_ha * tank / wasser_pro_ha
 
-# Kupfer, das mit dieser Spritzung pro Hektare ausgebracht wird
-kupfer_pro_ha = mittel_pro_ha * mittel["kupfer"]
 
 with rechts:
     # Zuerst prüfen: Ist das Mittel in diesem Stadium erlaubt?
@@ -214,7 +209,7 @@ Total: {mittel_total:.2f} {einheit} Mittel in {wasser_total:.0f} l Wasser
 
         st.write("")  # etwas Abstand
 
-        # Button 1: Werte für das Journal merken.
+        # Button: Werte für das Journal merken.
         # st.session_state ist ein Speicher, den alle Seiten lesen können.
         if st.button("Ins Journal übernehmen"):
             st.session_state["dosierung_vorschlag"] = {
@@ -229,39 +224,6 @@ Total: {mittel_total:.2f} {einheit} Mittel in {wasser_total:.0f} l Wasser
             }
             st.switch_page("pages/journal.py")   # direkt zum Journal wechseln
 
-        # Button 2: Rezept als HTML-Datei herunterladen.
-        # Eine HTML-Datei öffnet sich auf jedem Computer im Browser.
-        # <script>window.print()</script> öffnet beim Öffnen direkt das Druckfenster.
-        # Wurde keine Parzelle gewählt, steht im Rezept «keine gewählt».
-        if parzelle == "":
-            parzelle_text = "keine gewählt"
-        else:
-            parzelle_text = parzelle
-
-        rezept_html = f"""
-<html>
-<head><meta charset="utf-8"><title>Tankrezept</title></head>
-<body style="font-family: Arial, sans-serif; padding: 40px;">
-<h1 style="color:#7B1E3A;">Tankrezept</h1>
-<p>Spritztag: <b>{spritztag:%d.%m.%Y}</b><br>
-Parzelle: <b>{parzelle_text}</b> ({flaeche:.2f} ha)<br>
-Mittel: <b>{mittel_name}</b><br>
-Rebstadium: <b>{stadium}</b></p>
-<h2>{tankfuellungen} Tankfüllungen</h2>
-<p style="font-size:20px;">Pro volle Füllung: <b>{tank} l Wasser + {mittel_pro_tank:.2f} {einheit} Mittel</b></p>
-<p>Total: {mittel_total:.2f} {einheit} Mittel in {wasser_total:.0f} l Wasser</p>
-<p style="color:gray;">Immer die Etikette des Mittels beachten.</p>
-<script>window.print()</script>
-</body>
-</html>
-"""
-        st.download_button(
-            "Rezept drucken",
-            data=rezept_html,
-            file_name="tankrezept.html",
-            mime="text/html",
-        )
-
 
 st.subheader("Hinweise")
 
@@ -274,22 +236,6 @@ else:
 # Hinweis 2: Besondere Auflage des Mittels (nur wenn es eine gibt)
 if mittel["hinweis"] != "":
     st.info(mittel["hinweis"])
-
-# Hinweis 3: Jahreslimite
-# Die bisherigen Werte kommen später aus dem Journal. Bis dahin von Hand.
-bisher_behandlungen = st.number_input("Bisherige Behandlungen mit diesem Mittel dieses Jahr", min_value=0, value=0)
-bisher_kupfer = st.number_input("Bisher ausgebrachtes Kupfer dieses Jahr (kg/ha)", min_value=0.0, value=0.0)
-
-if mittel["max_behandlungen"] > 0:
-    st.write(f"Behandlungen: {bisher_behandlungen + 1} von max. {mittel['max_behandlungen']}")
-    if bisher_behandlungen + 1 > mittel["max_behandlungen"]:
-        st.error("Die maximale Anzahl Behandlungen wäre überschritten.")
-
-kupfer_neu = bisher_kupfer + kupfer_pro_ha
-st.write(f"Kupfer: {kupfer_neu:.2f} von max. {KUPFER_LIMITE} kg/ha")
-if kupfer_neu > KUPFER_LIMITE:
-    st.error("Die Kupferlimite wäre überschritten.")
-
 
 
 st.subheader(f"{mittel_name}: Menge pro ha je Stadium")
