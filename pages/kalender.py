@@ -152,8 +152,7 @@ def bewerte_tag(datum, tag, grenzen, sonntag_sperren, hitze_zaehlt):
 # Seite aufbauen
 
 
-st.write("Die Ampel verbindet die Frist der Infektion mit der Wetterprognose "
-         "und zeigt den besten Tag vor Ablauf der Frist.")
+#Die Ampel verbindet die Frist der Infektion mit der Wetterprognose und zeigt den besten Tag vor Ablauf der Frist
 
 heute = dt.date.today()
 
