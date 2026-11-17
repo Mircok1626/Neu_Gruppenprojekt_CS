@@ -1,8 +1,12 @@
 # Hier wird die Seite Kalender codiert.
 """Kalender: Wann kann ich spritzen?
 
-Die Seite verbindet die Frist der Infektionen (Agrometeo, CSV im Ordner daten)
-mit dem stündlichen Wetter von Open-Meteo und zeigt für 14 Tage eine Ampel.
+Die Seite erkennt Infektionen mit einem eigenen Machine-Learning-Modell:
+Das Modell hat aus den Agrometeo-Daten 2024 und 2025 gelernt, bei welchem
+Wetter es eine Infektion gibt. Danach schaut es sich das Wetter von Open-Meteo
+an (die letzten 14 Tage und die Prognose) und sagt, an welchen Tagen es eine
+Infektion gibt. Zusammen mit dem stündlichen Wetter zeigt die Seite für
+14 Tage eine Ampel, wann man spritzen kann.
 
 KI-Hinweis: Dieser Code wurde mit Claude (Anthropic, Claude Opus 5.5) am
 17.11.2026 generiert und danach von uns geprüft und angepasst.
@@ -14,6 +18,7 @@ import altair as alt
 import pandas as pd
 import requests
 import streamlit as st
+from sklearn.ensemble import RandomForestClassifier
 
 # Farben aus dem Konzept
 WEINROT = "#7B1E3A"
@@ -28,37 +33,137 @@ MITTEL = {"Folpet 80 WG": False, "Kupfer": False, "Schwefel": True}
 # Startwerte der Ampel: (gelb ab, rot ab, Einheit), noch mit dem Winzer bestätigen
 STANDARD = {"Regen": (0.5, 2.0, "mm"), "Wind": (15.0, 25.0, "km/h"), "Hitze": (25.0, 30.0, "°C")}
 
+# Wettermerkmale, aus denen das Modell lernt. Diese Werte gibt es sowohl in den
+# Agrometeo-Daten (Vergangenheit) als auch bei Open-Meteo (Prognose).
+MERKMALE = ["temp_min", "temp_mittel", "temp_max", "niederschlag_mm", "regen_vortag", "tag_im_jahr"]
 
-@st.cache_data
-def lade_infektionen(jahr):
-    """Liest die Agrometeo-Tabelle und gibt alle Infektionen mit Frist zurück."""
+# Ab diesem Risiko zählt ein Tag als Infektion. Bewusst tief (30 % statt 50 %):
+# Eine verpasste Infektion kostet Ernte, ein Fehlalarm nur einen Kontrollgang.
+WARNSCHWELLE = 0.3
+
+
+# ---------------------------------------------------------------------------
+# Machine Learning: aus den Agrometeo-Daten lernen
+# ---------------------------------------------------------------------------
+def ergaenze_merkmale(df):
+    """Ergänzt zwei Merkmale, die das Modell braucht.
+
+    regen_vortag: Regen am Tag davor (nasser Boden und nasse Blätter wirken nach)
+    tag_im_jahr:  1 bis 365, damit das Modell die Saison kennt (im Winter keine Infektion)
+    """
+    df["niederschlag_mm"] = df["niederschlag_mm"].fillna(0)   # leeres Feld heisst: kein Regen
+    df["regen_vortag"] = df["niederschlag_mm"].shift(1).fillna(0)
+    df["tag_im_jahr"] = df["datum"].dt.dayofyear
+    return df
+
+
+def lade_agrometeo(jahr):
+    """Liest die Agrometeo-Tabelle eines Jahres und bereitet sie für das Modell vor."""
     df = pd.read_csv(f"daten/zizers_{jahr}.csv")
-    df = df[(df["infektion_staerke"] > 0) & df["inkubation_aktuell"].notna()].copy()
-    df["start"] = pd.to_datetime(df["datum"])
-    # Ende der Inkubation steht als "20.05." in der Tabelle, darum hängen wir das Jahr an
-    df["ende"] = pd.to_datetime(df["inkubation_aktuell"] + str(jahr), format="%d.%m.%Y")
+    df = df[df["aus_wettervorhersage"] == 0].copy()   # nur gemessene Tage, keine Prognose
+    df["datum"] = pd.to_datetime(df["datum"])
+    df = ergaenze_merkmale(df)
+    df = df.dropna(subset=["temp_min", "temp_mittel", "temp_max"])
+    # Die richtige Antwort, die das Modell lernen soll: 1 = Infektion, 0 = keine
+    df["infektion"] = (df["infektion_staerke"] > 0).astype(int)
+    # Dauer der Inkubation in Tagen. errors="coerce": ungültige Einträge (z. B. "79%") werden leer
+    ende = pd.to_datetime(df["inkubation_aktuell"] + str(jahr), format="%d.%m.%Y", errors="coerce")
+    df["dauer"] = (ende - df["datum"]).dt.days
+    return df
+
+
+@st.cache_resource   # das Modell nur einmal trainieren, nicht bei jedem Klick
+def trainiere_modell():
+    """Trainiert das Modell mit 2024 und 2025 und prüft es mit 2026.
+
+    Rückgabe: das Modell, die Inkubationsdauer pro Monat und die Ergebnisse des Tests.
+    """
+    lernen = pd.concat([lade_agrometeo(2024), lade_agrometeo(2025)])
+
+    # Random Forest: 300 Entscheidungsbäume, die gemeinsam abstimmen.
+    # class_weight="balanced": Infektionstage sind seltener, zählen darum stärker.
+    modell = RandomForestClassifier(n_estimators=300, min_samples_leaf=3,
+                                    class_weight="balanced", random_state=0)
+    modell.fit(lernen[MERKMALE], lernen["infektion"])
+
+    # Wie lange dauert die Inkubation im Schnitt? Je Monat aus den Lerndaten.
+    infektionen = lernen[(lernen["infektion"] == 1) & lernen["dauer"].notna()]
+    dauer_pro_monat = infektionen.groupby(infektionen["datum"].dt.month)["dauer"].mean().round().to_dict()
+
+    # Test mit 2026: Tage, die das Modell beim Lernen nie gesehen hat
+    test = lade_agrometeo(2026)
+    vorhersage = (modell.predict_proba(test[MERKMALE])[:, 1] >= WARNSCHWELLE).astype(int)
+    echt = test["infektion"]
+    ergebnis = {
+        "erkannt": int(((vorhersage == 1) & (echt == 1)).sum()),
+        "total": int(echt.sum()),
+        "verpasst": int(((vorhersage == 0) & (echt == 1)).sum()),
+        "fehlalarme": int(((vorhersage == 1) & (echt == 0)).sum()),
+    }
+    return modell, dauer_pro_monat, ergebnis
+
+
+def erkenne_infektionen(tageswetter, modell, dauer_pro_monat):
+    """Das Modell schaut sich jeden Tag an und sagt, ob es eine Infektion gibt."""
+    df = tageswetter.dropna(subset=MERKMALE).copy()
+    if df.empty:   # keine Wetterdaten: dann auch keine Infektionen
+        return pd.DataFrame(columns=["start", "ende", "frist", "stufe"])
+    # Wahrscheinlichkeit für eine Infektion (0 bis 1). Ab der Warnschwelle zählt es als Infektion.
+    df["risiko"] = modell.predict_proba(df[MERKMALE])[:, 1]
+    df = df[df["risiko"] >= WARNSCHWELLE].copy()
+
+    df["start"] = df["datum"]
+    # Inkubationsdauer aus dem gelernten Durchschnitt des Monats (falls unbekannt: 10 Tage)
+    dauer = df["datum"].dt.month.map(dauer_pro_monat).fillna(10)
+    df["ende"] = df["start"] + pd.to_timedelta(dauer, unit="D")
     # Formel 3: spritzen bis = Infektionsdatum + 80 % der Inkubationsdauer
     df["frist"] = (df["start"] + (df["ende"] - df["start"]) * 0.8).dt.floor("D")
-    df["stufe"] = df["infektion_staerke"].map({1: "!", 2: "!!", 3: "!!!"})
+    df["stufe"] = (df["risiko"] * 100).round().astype(int).astype(str) + " %"
     return df
+
+
+# ---------------------------------------------------------------------------
+# Wetter von Open-Meteo
+# ---------------------------------------------------------------------------
+def open_meteo_url(bis):
+    """Vergangenheit und Prognose liegen bei Open-Meteo unter verschiedenen Adressen."""
+    if bis < dt.date.today():
+        return "https://historical-forecast-api.open-meteo.com/v1/forecast"  # Vergangenheit
+    return "https://api.open-meteo.com/v1/forecast"  # Prognose
 
 
 @st.cache_data
 def lade_wetter(von, bis):
     """Lädt das stündliche Wetter (Regen, Wind, Temperatur) für Zizers von Open-Meteo."""
-    if bis < dt.date.today():
-        url = "https://historical-forecast-api.open-meteo.com/v1/forecast"  # Vergangenheit
-    else:
-        url = "https://api.open-meteo.com/v1/forecast"  # Prognose
     parameter = {"latitude": 46.94, "longitude": 9.56, "timezone": "Europe/Zurich",
                  "hourly": "precipitation,wind_speed_10m,temperature_2m",
                  "start_date": str(von), "end_date": str(bis)}
-    daten = requests.get(url, params=parameter, timeout=10).json()["hourly"]
+    daten = requests.get(open_meteo_url(bis), params=parameter, timeout=10).json()["hourly"]
     wetter = pd.DataFrame(daten)
     wetter["time"] = pd.to_datetime(wetter["time"])
     return wetter
 
 
+@st.cache_data
+def lade_tageswetter(von, bis):
+    """Lädt das Wetter pro Tag von Open-Meteo, mit denselben Spalten wie bei Agrometeo."""
+    parameter = {"latitude": 46.94, "longitude": 9.56, "timezone": "Europe/Zurich",
+                 "daily": "temperature_2m_min,temperature_2m_mean,temperature_2m_max,precipitation_sum",
+                 "start_date": str(von), "end_date": str(bis)}
+    daten = requests.get(open_meteo_url(bis), params=parameter, timeout=10).json()["daily"]
+    df = pd.DataFrame({
+        "datum": pd.to_datetime(daten["time"]),
+        "temp_min": daten["temperature_2m_min"],
+        "temp_mittel": daten["temperature_2m_mean"],
+        "temp_max": daten["temperature_2m_max"],
+        "niederschlag_mm": daten["precipitation_sum"],
+    })
+    return ergaenze_merkmale(df)
+
+
+# ---------------------------------------------------------------------------
+# Ampel
+# ---------------------------------------------------------------------------
 def bewerte_tag(tag, wetter, hitze_zaehlt, sonntag_sperren):
     """Gibt Ampelstufe (0 grün, 1 gelb, 2 rot), beste Startzeit und Gründe für einen Tag zurück."""
     stunden = wetter[wetter["time"].dt.date == tag.date()].reset_index()
@@ -121,14 +226,21 @@ with st.expander("Grenzwerte der Ampel"):
         g2.number_input(f"{name} rot ab ({einheit})", key=name + "_rot", step=0.5)
     st.button("Standardwerte", on_click=standardwerte)
 
+# Modell trainieren (passiert nur beim ersten Mal, danach ist es gespeichert)
+modell, dauer_pro_monat, ergebnis = trainiere_modell()
+
 # Daten laden
 tage = pd.date_range(heute, periods=14)
-infektionen = lade_infektionen(heute.year)
 try:
     wetter = lade_wetter(heute, tage[-1].date())
+    # Für die Infektionen auch 14 Tage zurück: Eine Infektion von letzter Woche kann noch offen sein
+    tageswetter = lade_tageswetter(heute - dt.timedelta(days=14), tage[-1].date())
 except Exception:
     st.error("Das Wetter von Open-Meteo konnte nicht geladen werden.")
     st.stop()
+
+# Das Modell sagt, an welchen Tagen es eine Infektion gibt
+infektionen = erkenne_infektionen(tageswetter, modell, dauer_pro_monat)
 
 # Laufende Inkubationen: Balken, die in die 14 Tage hineinreichen
 laufend = infektionen[(infektionen["start"] <= tage[-1]) & (infektionen["ende"] >= tage[0])].copy()
@@ -151,7 +263,7 @@ with bereich_ampel:
             empfehlung = "Kein grüner Tag vor der Frist. Prüfe die gelben Tage."
         st.markdown(f"""
         <div style="background-color: {WEINROT}; color: white; padding: 20px; border-radius: 15px;">
-            <p style="margin: 0; color: #F3D9DF;">Infektion {infektion['stufe']} am {infektion['start']:%d.%m.}</p>
+            <p style="margin: 0; color: #F3D9DF;">Infektion am {infektion['start']:%d.%m.} (Risiko {infektion['stufe']})</p>
             <h3 style="margin: 0; color: white;">Spritzen bis {WOCHENTAGE[frist.weekday()]}, {frist:%d.%m.}</h3>
             <p style="margin: 0;">Noch {len(gute)} gute Tage vor der Frist. {empfehlung}</p>
         </div>""", unsafe_allow_html=True)
@@ -191,7 +303,7 @@ with bereich_inkubation:
     if len(laufend) == 0:
         st.write("Keine laufenden Inkubationen in diesen 14 Tagen.")
     else:
-        laufend["name"] = laufend["stufe"] + " am " + laufend["start"].dt.strftime("%d.%m.")
+        laufend["name"] = laufend["start"].dt.strftime("%d.%m.") + " (" + laufend["stufe"] + ")"
         laufend["art"] = "berechnet"
         laufend.loc[laufend["start"] > tage[0], "art"] = "Prognose"
         achse = alt.X("start:T", title=None, scale=alt.Scale(domain=[tage[0], tage[-1] + pd.Timedelta(days=1)]),
@@ -209,9 +321,28 @@ with bereich_inkubation:
             x="frist:T", y=zeile, text="frist_text:N")
         st.altair_chart((balken + striche + texte).properties(height=50 * len(laufend)))
         st.caption("Balken: vom Infektionstag bis zum Ende der Inkubation. "
-                   "Voller Balken: berechnet, heller gestrichelter Balken: Prognose.")
+                   "Voller Balken: schon passiert, heller gestrichelter Balken: Prognose. "
+                   "In Klammern: wie sicher sich das Modell ist.")
+
+# Erklärung des Modells (aufklappbar)
+with st.expander("Wie erkennt der Kalender Infektionen? (Machine Learning)"):
+    st.markdown(
+        "Ein **Random Forest** (300 Entscheidungsbäume) hat aus den Agrometeo-Daten "
+        "**2024 und 2025** gelernt, bei welchem Wetter es eine Infektion gibt: "
+        "Temperatur (min, Mittel, max), Regen am Tag und am Vortag sowie die Jahreszeit. "
+        "Jetzt schaut er sich das Wetter von Open-Meteo an und sagt für jeden Tag, "
+        "ob es eine Infektion gibt. Ab einem Risiko von 30 % warnt der Kalender."
+    )
+    st.markdown("**Test mit 2026** (Tage, die das Modell beim Lernen nie gesehen hat):")
+    k1, k2, k3 = st.columns(3)
+    k1.metric("Infektionen erkannt", f"{ergebnis['erkannt']} von {ergebnis['total']}")
+    k2.metric("Verpasst", ergebnis["verpasst"])
+    k3.metric("Fehlalarme", ergebnis["fehlalarme"])
+    st.caption("Eine verpasste Infektion ist gefährlicher als ein Fehlalarm. "
+               "Das Modell lernt mit den Messungen der Station, bekommt im Kalender aber "
+               "das Wetter von Open-Meteo. Diese Werte weichen leicht voneinander ab.")
 
 # Fusszeile
 st.divider()
-st.caption("Datenquellen: Wetter stündlich von Open-Meteo, Infektionen von Agrometeo (Station Zizers). "
+st.caption("Datenquellen: Wetter von Open-Meteo, Lerndaten für das Modell von Agrometeo (Station Zizers). "
            "Die App ist eine Entscheidungshilfe und keine offizielle Pflanzenschutzberatung.")
