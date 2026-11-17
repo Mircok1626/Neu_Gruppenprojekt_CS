@@ -81,3 +81,20 @@ def lade_wetter (tage_zurueck=21, tage_voraus=14):
     tabelle["ist_prognose"] = tabelle["datum"] > heute
 
     return tabelle 
+
+def zeige_wetterdaten():
+    """Lädt die Wetterdaten und zeigt sie vorerst als einfache Tabelle."""
+    st.subheader("Wetterdaten Zizers")
+
+    #try/except: Wenn die Abfrage scheitert (z. B. kein Internet),
+    #zeigen wir eine Meldung statt einer roten Fehlerseite.
+    try:
+        tabelle = lade_wetter()
+        st.dataframe(tabelle, use_container_width=True)
+        st.caption("Quelle: Open-Meteo")
+    except requests.RequestException:
+        st.error("Wetterdaten konnten nicht geladen werden. Bitte später erneut versuchen.")
+
+#Hier wird die Seite aufgebaut (Reihenfolge = Reienfolge auf der Seite)
+zeige_banner()
+zeige_wetterdaten()
