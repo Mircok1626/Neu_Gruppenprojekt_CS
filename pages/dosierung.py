@@ -1,12 +1,15 @@
 #Hier wird die Seite Dosierung codiert.
 """Dosierung: Rechnet aus Rebstadium, Mittel und Fläche ein Tankrezept aus.
 
-Die Seite ist eigenständig. Sie braucht keine anderen Seiten der App.
+Die Fläche kann aus den gespeicherten Parzellen (Seite Parzelle) übernommen
+oder als Notfall von Hand eingegeben werden.
 Quelle der Zahlen: Agroscope Transfer Nr. 626, Pflanzenschutzmittelliste
 für den Rebbau 2026, Mittel gegen Falschen Mehltau.
 """
 
 import math
+import sqlite3
+import pandas as pd
 import streamlit as st
 
 # Rebstadien und ihre Basisbrühmenge in Liter pro Hektare.
@@ -64,8 +67,14 @@ HITZE_GRENZE = 30     # °C, PLATZHALTER
 st.title("Dosierung – wie viel Mittel und Wasser brauche ich?")
 st.caption("Aus Rebstadium, Mittel und Fläche wird ein Tankrezept berechnet.")
 
-# Die Seite wird in zwei Spalten geteilt: links Eingaben, rechts Resultat.
-links, rechts = st.columns(2, gap="large")
+# Parzellen aus der Datenbank holen (dieselbe Datenbank wie auf der Seite Parzelle).
+# try/except: Gibt es die Tabelle noch nicht, stürzt die Seite nicht ab,
+# sondern arbeitet einfach mit einer leeren Tabelle weiter.
+con = sqlite3.connect("daten/spritzplaner.db")
+try:
+    parzellen = pd.read_sql_query("SELECT name, flaeche_ha FROM parzellen", con)
+except Exception:
+    parzellen = pd.DataFrame(columns=["name", "flaeche_ha"])
 
 # Die Seite wird in zwei Spalten geteilt: links Eingaben, rechts Resultat.
 links, rechts = st.columns(2, gap="large")
@@ -73,19 +82,37 @@ links, rechts = st.columns(2, gap="large")
 with links:
     st.subheader("Eingaben")
 
+    # Parzelle wählen: Die erste Option ist immer «Von Hand eingeben» (Notfall),
+    # danach kommen alle gespeicherten Parzellen.
+    MANUELL = "Von Hand eingeben"
+    optionen = [MANUELL] + list(parzellen["name"])
+    # index: Gibt es Parzellen, ist die erste Parzelle vorausgewählt, sonst «Von Hand».
+    if len(parzellen) > 0:
+        start = 1
+    else:
+        start = 0
+    parzelle = st.selectbox("Parzelle", optionen, index=start)
+
     # Auswahlfelder: Der Benutzer wählt einen Eintrag aus der Liste.
     # index=3 heisst: «Blüte» (4. Eintrag) ist vorausgewählt.
     stadium = st.selectbox("Rebstadium", list(STADIEN.keys()), index=3)
     mittel_name = st.selectbox("Mittel", list(MITTEL.keys()))
 
+    # Fläche: entweder aus der gewählten Parzelle oder von Hand.
+    if parzelle == MANUELL:
+        flaeche = st.number_input("Fläche (ha)", min_value=0.01, value=0.8, step=0.1)
+    else:
+        # Die Zeile der gewählten Parzelle suchen und die Fläche daraus lesen.
+        zeile = parzellen[parzellen["name"] == parzelle].iloc[0]
+        flaeche = float(zeile["flaeche_ha"])
+        st.info(f"Fläche aus der Parzelle «{parzelle}»: **{flaeche:.2f} ha**")
+
     # Zahlenfelder: min_value = kleinster Wert, value = Startwert
-    flaeche = st.number_input("Fläche (ha)", min_value=0.01, value=0.8, step=0.1)
     wasser_pro_ha = st.number_input("Wasser des Sprühgeräts (l/ha)", min_value=50, value=300, step=25)
     tank = st.number_input("Tankgrösse (l)", min_value=20, value=200, step=10)
     temperatur = st.number_input("Höchsttemperatur am Spritztag (°C)", value=24)
 
-    st.caption("Fläche, Wasser und Temperatur werden später automatisch "
-               "von den Seiten Parzelle und Kalender übernommen.")
+    st.caption("Die Temperatur wird später automatisch vom Kalender übernommen.")
 
 # Die Angaben zum gewählten Mittel und Stadium aus Schritt 1 holen.
 mittel = MITTEL[mittel_name]
@@ -139,6 +166,7 @@ Konzentrierung: {konzentrierung:.1f}-fach
         # st.session_state ist ein Speicher, den alle Seiten lesen können.
         if st.button("Ins Journal übernehmen"):
             st.session_state["dosierung_vorschlag"] = {
+                "parzelle": parzelle,
                 "stadium": stadium,
                 "mittel": mittel_name,
                 "flaeche": flaeche,
@@ -151,6 +179,7 @@ Konzentrierung: {konzentrierung:.1f}-fach
         # Button 2: Rezept als Textdatei herunterladen, um es auszudrucken.
         rezept_text = (
             f"Tankrezept\n"
+            f"Parzelle: {parzelle} ({flaeche:.2f} ha)\n"
             f"Mittel: {mittel_name}\n"
             f"Stadium: {stadium}\n"
             f"Tankfüllungen: {tankfuellungen}\n"
