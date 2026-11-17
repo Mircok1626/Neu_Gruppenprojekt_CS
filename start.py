@@ -1,20 +1,37 @@
 #Hier wird die Startseite codiert.
 """Startseite des Spritzplaners mit Banner und Navigationskacheln."""
 
+import base64
 import streamlit as st
 
 
-def zeige_banner():
-    """Zeigt den weinroten Willkommens-Banner oben auf der Startseite.
+def lade_bild(pfad):
+    """Liest ein Bild ein und wandelt es in Text (Base64) um.
 
-    Der Banner wird mit HTML und CSS gestaltet und enthält eine kleine
-    Begrüssungszeile, den Titel der App und einen kurzen Untertitel.
+    HTML in Streamlit kann Bilder aus dem Projektordner nicht direkt laden.
+    Darum wird das Bild in Text umgewandelt und direkt ins HTML geschrieben.
     """
-    st.markdown("""
+    with open(pfad, "rb") as datei:          # "rb" = als Bild-Datei lesen
+        return base64.b64encode(datei.read()).decode()
+
+
+def zeige_banner():
+    """Zeigt den weinroten Willkommens-Banner mit dem Rebberg-Foto im Hintergrund.
+
+    Über dem Foto liegt ein Farbverlauf: links kräftiges Weinrot (dort steht
+    der Text), nach rechts immer durchsichtiger, damit man das Foto sieht.
+    """
+    bild = lade_bild("bilder/rebberg.jpg")
+
+    st.markdown(f"""
     <div style="
-        background-color: #7B1E3A;
+        background-image:
+            linear-gradient(90deg, rgba(123,30,58,0.95) 0%, rgba(123,30,58,0.75) 45%, rgba(123,30,58,0.15) 100%),
+            url(data:image/jpeg;base64,{bild});
+        background-size: cover;
+        background-position: center 62%;
         color: white;
-        padding: 48px 40px;
+        padding: 80px 40px;
         border-radius: 20px;
         margin-bottom: 24px;
     ">
@@ -61,4 +78,3 @@ def zeige_kacheln():
 
 zeige_banner()
 zeige_kacheln()
-
