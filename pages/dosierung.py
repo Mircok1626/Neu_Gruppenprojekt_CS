@@ -178,17 +178,37 @@ Total: {mittel_total:.2f} {einheit} Mittel in {wasser_total:.0f} l Wasser
             }
             st.switch_page("pages/journal.py")   # direkt zum Journal wechseln
 
-        # Button 2: Rezept als Textdatei herunterladen, um es auszudrucken.
-        rezept_text = (
-            f"Tankrezept\n"
-            f"Parzelle: {parzelle} ({flaeche:.2f} ha)\n"
-            f"Mittel: {mittel_name}\n"
-            f"Stadium: {stadium}\n"
-            f"Tankfüllungen: {tankfuellungen}\n"
-            f"Pro Füllung: {tank} l Wasser + {mittel_pro_tank:.2f} {einheit}\n"
-            f"Total: {mittel_total:.2f} {einheit} in {wasser_total:.0f} l Wasser\n"
+        # Button 2: Rezept als HTML-Datei herunterladen.
+        # Eine HTML-Datei öffnet sich auf jedem Computer im Browser.
+        # <script>window.print()</script> öffnet beim Öffnen direkt das Druckfenster.
+        # Im Rezept soll nicht «Von Hand eingeben» als Parzellenname stehen.
+        if parzelle == MANUELL:
+            parzelle_text = "keine gewählt"
+        else:
+            parzelle_text = parzelle
+
+        rezept_html = f"""
+<html>
+<head><meta charset="utf-8"><title>Tankrezept</title></head>
+<body style="font-family: Arial, sans-serif; padding: 40px;">
+<h1 style="color:#7B1E3A;">Tankrezept</h1>
+<p>Parzelle: <b>{parzelle_text}</b> ({flaeche:.2f} ha)<br>
+Mittel: <b>{mittel_name}</b><br>
+Rebstadium: <b>{stadium}</b></p>
+<h2>{tankfuellungen} Tankfüllungen</h2>
+<p style="font-size:20px;">Pro volle Füllung: <b>{tank} l Wasser + {mittel_pro_tank:.2f} {einheit} Mittel</b></p>
+<p>Total: {mittel_total:.2f} {einheit} Mittel in {wasser_total:.0f} l Wasser</p>
+<p style="color:gray;">Immer die Etikette des Mittels beachten.</p>
+<script>window.print()</script>
+</body>
+</html>
+"""
+        st.download_button(
+            "Rezept drucken",
+            data=rezept_html,
+            file_name="tankrezept.html",
+            mime="text/html",
         )
-        st.download_button("Rezept herunterladen (zum Drucken)", rezept_text, "tankrezept.txt")
 
 
 st.subheader("Hinweise")
