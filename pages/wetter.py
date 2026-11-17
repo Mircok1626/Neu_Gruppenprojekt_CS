@@ -77,12 +77,13 @@ def lade_wetter (tage_zurueck=21, tage_voraus=14):
     return tabelle 
 
 def zeige_wetterdaten():
-    """Lädt die Wetterdaten und zeigt sie vorerst als einfache Tabelle."""
-    st.subheader("Wetterdaten Zizers")
+    """Lädt die Wetterdaten, zeigt Diagramme und optional die Tabelle."""
+    st.subheader("Wetterverlauf & Prognose Zizers")
 
     #try/except: Wenn die Abfrage scheitert (z. B. kein Internet),
     #zeigen wir eine Meldung statt einer roten Fehlerseite.
     try:
+        with st.spinner("Lade Wetterdaten von Open-Meteo..."):
         tabelle = lade_wetter()
 
         #Wir setzen das Datum als Index für schöne Diagramme
