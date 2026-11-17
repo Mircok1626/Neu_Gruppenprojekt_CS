@@ -253,7 +253,7 @@ for reihe in range(2):
                     if tag["stufe"] < 2:
                         st.caption(f"ab {tag['start']} Uhr")
 
-                st.caption(", ".join(tag["gründe"]))
+                st.caption(", ".join(tag["gruende"]))
 
                 # Markierungen
                 if datum == heute:
