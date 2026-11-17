@@ -158,3 +158,60 @@ Konzentrierung: {konzentrierung:.1f}-fach
             f"Total: {mittel_total:.2f} {einheit} in {wasser_total:.0f} l Wasser\n"
         )
         st.download_button("Rezept herunterladen (zum Drucken)", rezept_text, "tankrezept.txt")
+
+
+st.subheader("Hinweise")
+
+# Hinweis 1: Hitze
+if temperatur >= HITZE_GRENZE and mittel["hitzeempfindlich"]:
+    st.warning(f"Hitzeempfindliches Mittel: Bei {temperatur} °C kann {mittel_name} die Blätter verbrennen.")
+else:
+    st.success("Hitze ok.")
+
+# Hinweis 2: Besondere Auflage des Mittels (nur wenn es eine gibt)
+if mittel["hinweis"] != "":
+    st.info(mittel["hinweis"])
+
+# Hinweis 3: Jahreslimite
+# Die bisherigen Werte kommen später aus dem Journal. Bis dahin von Hand.
+bisher_behandlungen = st.number_input("Bisherige Behandlungen mit diesem Mittel dieses Jahr", min_value=0, value=0)
+bisher_kupfer = st.number_input("Bisher ausgebrachtes Kupfer dieses Jahr (kg/ha)", min_value=0.0, value=0.0)
+
+if mittel["max_behandlungen"] > 0:
+    st.write(f"Behandlungen: {bisher_behandlungen + 1} von max. {mittel['max_behandlungen']}")
+    if bisher_behandlungen + 1 > mittel["max_behandlungen"]:
+        st.error("Die maximale Anzahl Behandlungen wäre überschritten.")
+
+kupfer_neu = bisher_kupfer + kupfer_pro_ha
+st.write(f"Kupfer: {kupfer_neu:.2f} von max. {KUPFER_LIMITE} kg/ha")
+if kupfer_neu > KUPFER_LIMITE:
+    st.error("Die Kupferlimite wäre überschritten.")
+
+
+
+st.subheader(f"{mittel_name}: Menge pro ha je Stadium")
+
+# Zwei leere Listen: eine für die Namen, eine für die Mengen.
+stadien_namen = []
+mengen = []
+for name in mittel["stadien"]:
+    stadien_namen.append(name)
+    mengen.append(mittel["konzentration"] / 100 * STADIEN[name])
+
+# Das Diagramm bekommt die Mengen als Säulen und die Namen als x-Achse.
+st.bar_chart({"Stadium": stadien_namen, "Menge": mengen},
+             x="Stadium", y="Menge", y_label=f"{einheit} pro ha",
+             color="#7B1E3A", sort=False)
+with st.expander("So wird gerechnet"):
+    st.markdown(f"""
+1. Mittel pro ha = Konzentration ÷ 100 × Basisbrühmenge = **{mittel_pro_ha:.2f} {einheit}**
+2. Mittel total = Mittel pro ha × Fläche = **{mittel_total:.2f} {einheit}**
+3. Wasser total = Wasser pro ha × Fläche = **{wasser_total:.0f} l**
+4. Tankfüllungen = Wasser total ÷ Tankgrösse, aufgerundet = **{tankfuellungen}**
+5. Mittel pro Tank = Mittel pro ha × Tankgrösse ÷ Wasser pro ha = **{mittel_pro_tank:.2f} {einheit}**
+6. Konzentrierung = Basisbrühmenge ÷ Wasser pro ha = **{konzentrierung:.1f}-fach**
+""")
+
+st.divider()
+st.caption("Quelle: Agroscope, Pflanzenschutzmittelliste für den Rebbau 2026. "
+           "Immer die Etikette des Mittels beachten. Die App ist eine Entscheidungshilfe.")
