@@ -108,7 +108,13 @@ with links:
         st.info(f"Fläche aus der Parzelle «{parzelle}»: **{flaeche:.2f} ha**")
 
     # Zahlenfelder: min_value = kleinster Wert, value = Startwert
-    wasser_pro_ha = st.number_input("Wasser des Sprühgeräts (l/ha)", min_value=50, value=300, step=25)
+    # help= zeigt ein ? neben dem Feld mit einer Erklärung
+    wasser_pro_ha = st.number_input(
+        "Wie viele Liter versprüht dein Gerät pro Hektare?",
+        min_value=50, value=300, step=25,
+        help="Wenn du eine Hektare fertig gespritzt hast: Wie viele Liter sind aus dem Tank weg? "
+             "Früh in der Saison oft ca. 150 l, bei voller Laubwand ca. 400 l.",
+    )
     tank = st.number_input("Tankgrösse (l)", min_value=20, value=200, step=10)
     temperatur = st.number_input("Höchsttemperatur am Spritztag (°C)", value=24)
 
