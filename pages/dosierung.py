@@ -7,9 +7,11 @@ Quelle der Zahlen: Agroscope Transfer Nr. 626, Pflanzenschutzmittelliste
 für den Rebbau 2026, Mittel gegen Falschen Mehltau.
 """
 
+import datetime
 import math
 import sqlite3
 import pandas as pd
+import requests
 import streamlit as st
 
 # Rebstadien und ihre Basisbrühmenge in Liter pro Hektare.
@@ -63,6 +65,31 @@ MITTEL = {
 KUPFER_LIMITE = 4.0   # kg Kupfer pro ha und Jahr (ÖLN)
 HITZE_GRENZE = 30     # °C, PLATZHALTER
 
+# Koordinaten der Station Zizers, gleich wie auf der Wetter-Seite
+ZIZERS_LAT = 46.93
+ZIZERS_LON = 9.57
+
+
+@st.cache_data(ttl=3600)   # Daten 1 Stunde merken, damit nicht bei jedem Klick neu geladen wird
+def lade_hoechsttemperaturen():
+    """Holt die Höchsttemperatur pro Tag von Open-Meteo (gleiche Quelle wie die Wetter-Seite).
+
+    Rückgabe: ein Dictionary, z. B. {"2026-05-17": 24.3, "2026-05-18": 27.1, ...}
+    """
+    url = "https://api.open-meteo.com/v1/forecast"
+    parameter = {
+        "latitude": ZIZERS_LAT,
+        "longitude": ZIZERS_LON,
+        "daily": "temperature_2m_max",   # Höchsttemperatur pro Tag
+        "forecast_days": 16,             # heute und die nächsten 15 Tage
+        "timezone": "Europe/Zurich",
+    }
+    antwort = requests.get(url, params=parameter, timeout=15)
+    antwort.raise_for_status()
+    daten = antwort.json()["daily"]
+    # zip verbindet die Liste der Daten mit der Liste der Temperaturen zu Paaren
+    return dict(zip(daten["time"], daten["temperature_2m_max"]))
+
 # Titel und Untertitel
 st.title("Dosierung – wie viel Mittel und Wasser brauche ich?")
 st.caption("Aus Rebstadium, Mittel und Fläche wird ein Tankrezept berechnet.")
@@ -115,9 +142,33 @@ with links:
              "Früh in der Saison oft ca. 150 l, bei voller Laubwand ca. 400 l.",
     )
     tank = st.number_input("Tankgrösse (l)", min_value=20, value=200, step=10)
-    temperatur = st.number_input("Höchsttemperatur am Spritztag (°C)", value=24)
 
-    st.caption("Die Temperatur wird später automatisch vom Kalender übernommen.")
+    # Spritztag: heute oder einer der nächsten 15 Tage (so weit reicht die Wetterprognose)
+    heute = datetime.date.today()
+    spritztag = st.date_input(
+        "Geplanter Spritztag",
+        value=heute,
+        min_value=heute,
+        max_value=heute + datetime.timedelta(days=15),
+        format="DD.MM.YYYY",
+    )
+
+    # Temperatur am Spritztag aus der Wetterprognose holen.
+    # try/except: Klappt das Laden nicht (z. B. kein Internet), stürzt die Seite nicht ab.
+    try:
+        temperaturen = lade_hoechsttemperaturen()
+    except Exception:
+        temperaturen = {}
+    # str(spritztag) ergibt z. B. "2026-05-17", genau so heissen die Schlüssel im Dictionary.
+    temperatur = temperaturen.get(str(spritztag))
+
+    if temperatur is None:
+        # Notfall: keine Wetterdaten, also Temperatur von Hand eingeben
+        st.warning("Wetterdaten konnten nicht geladen werden. Bitte die Temperatur von Hand eingeben.")
+        temperatur = st.number_input("Höchsttemperatur am Spritztag (°C)", value=24)
+    else:
+        st.info(f"Höchsttemperatur am {spritztag:%d.%m.%Y} laut Wetterprognose: **{temperatur:.0f} °C**")
+
 
 # Die Angaben zum gewählten Mittel und Stadium aus Schritt 1 holen.
 mittel = MITTEL[mittel_name]
@@ -167,6 +218,7 @@ Total: {mittel_total:.2f} {einheit} Mittel in {wasser_total:.0f} l Wasser
         # st.session_state ist ein Speicher, den alle Seiten lesen können.
         if st.button("Ins Journal übernehmen"):
             st.session_state["dosierung_vorschlag"] = {
+                "datum": spritztag,
                 "parzelle": parzelle,
                 "stadium": stadium,
                 "mittel": mittel_name,
@@ -191,7 +243,8 @@ Total: {mittel_total:.2f} {einheit} Mittel in {wasser_total:.0f} l Wasser
 <head><meta charset="utf-8"><title>Tankrezept</title></head>
 <body style="font-family: Arial, sans-serif; padding: 40px;">
 <h1 style="color:#7B1E3A;">Tankrezept</h1>
-<p>Parzelle: <b>{parzelle_text}</b> ({flaeche:.2f} ha)<br>
+<p>Spritztag: <b>{spritztag:%d.%m.%Y}</b><br>
+Parzelle: <b>{parzelle_text}</b> ({flaeche:.2f} ha)<br>
 Mittel: <b>{mittel_name}</b><br>
 Rebstadium: <b>{stadium}</b></p>
 <h2>{tankfuellungen} Tankfüllungen</h2>
@@ -214,9 +267,9 @@ st.subheader("Hinweise")
 
 # Hinweis 1: Hitze
 if temperatur >= HITZE_GRENZE and mittel["hitzeempfindlich"]:
-    st.warning(f"Hitzeempfindliches Mittel: Bei {temperatur} °C kann {mittel_name} die Blätter verbrennen.")
+    st.warning(f"Hitzeempfindliches Mittel: Bei {temperatur:.0f} °C kann {mittel_name} die Blätter verbrennen.")
 else:
-    st.success("Hitze ok.")
+    st.success(f"Hitze ok ({temperatur:.0f} °C am Spritztag).")
 
 # Hinweis 2: Besondere Auflage des Mittels (nur wenn es eine gibt)
 if mittel["hinweis"] != "":
