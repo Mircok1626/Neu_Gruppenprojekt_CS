@@ -82,30 +82,29 @@ links, rechts = st.columns(2, gap="large")
 with links:
     st.subheader("Eingaben")
 
-    # Parzelle wählen: Die erste Option ist immer «Von Hand eingeben» (Notfall),
-    # danach kommen alle gespeicherten Parzellen.
-    MANUELL = "Von Hand eingeben"
-    optionen = [MANUELL] + list(parzellen["name"])
-    # index: Gibt es Parzellen, ist die erste Parzelle vorausgewählt, sonst «Von Hand».
-    if len(parzellen) > 0:
-        start = 1
+    # Parzelle: Normalerweise wählt man eine gespeicherte Parzelle aus.
+    # Mit dem Häkchen «Manuell ausfüllen» gibt man die Fläche selbst ein (Notfall).
+    if parzellen.empty:
+        # Gibt es noch keine Parzellen, geht nur die Eingabe von Hand.
+        manuell = True
+        st.caption("Noch keine Parzellen gespeichert. Bitte die Fläche von Hand eingeben.")
     else:
-        start = 0
-    parzelle = st.selectbox("Parzelle", optionen, index=start)
+        manuell = st.checkbox("Manuell ausfüllen")
+
+    if manuell:
+        parzelle = ""   # keine Parzelle gewählt
+        flaeche = st.number_input("Fläche (ha)", min_value=0.01, value=0.8, step=0.1)
+    else:
+        parzelle = st.selectbox("Parzelle", list(parzellen["name"]))
+        # Die Zeile der gewählten Parzelle suchen und die Fläche daraus lesen.
+        zeile = parzellen[parzellen["name"] == parzelle].iloc[0]
+        flaeche = float(zeile["flaeche_ha"])
+        st.info(f"Fläche aus der Parzelle «{parzelle}»: **{flaeche:.2f} ha**")
 
     # Auswahlfelder: Der Benutzer wählt einen Eintrag aus der Liste.
     # index=3 heisst: «Blüte» (4. Eintrag) ist vorausgewählt.
     stadium = st.selectbox("Rebstadium", list(STADIEN.keys()), index=3)
     mittel_name = st.selectbox("Mittel", list(MITTEL.keys()))
-
-    # Fläche: entweder aus der gewählten Parzelle oder von Hand.
-    if parzelle == MANUELL:
-        flaeche = st.number_input("Fläche (ha)", min_value=0.01, value=0.8, step=0.1)
-    else:
-        # Die Zeile der gewählten Parzelle suchen und die Fläche daraus lesen.
-        zeile = parzellen[parzellen["name"] == parzelle].iloc[0]
-        flaeche = float(zeile["flaeche_ha"])
-        st.info(f"Fläche aus der Parzelle «{parzelle}»: **{flaeche:.2f} ha**")
 
     # Zahlenfelder: min_value = kleinster Wert, value = Startwert
     # help= zeigt ein ? neben dem Feld mit einer Erklärung
@@ -181,8 +180,8 @@ Total: {mittel_total:.2f} {einheit} Mittel in {wasser_total:.0f} l Wasser
         # Button 2: Rezept als HTML-Datei herunterladen.
         # Eine HTML-Datei öffnet sich auf jedem Computer im Browser.
         # <script>window.print()</script> öffnet beim Öffnen direkt das Druckfenster.
-        # Im Rezept soll nicht «Von Hand eingeben» als Parzellenname stehen.
-        if parzelle == MANUELL:
+        # Wurde keine Parzelle gewählt, steht im Rezept «keine gewählt».
+        if parzelle == "":
             parzelle_text = "keine gewählt"
         else:
             parzelle_text = parzelle
