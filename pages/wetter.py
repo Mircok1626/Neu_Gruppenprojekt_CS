@@ -104,6 +104,7 @@ def zeige_wetterdaten():
     except requests.RequestException:
         st.error("Wetterdaten konnten nicht geladen werden. Bitte später erneut versuchen.")
 
-    #Seite aufbauen 
-    zeigen_banner()
+    # --- SEITENAUFBAU ---
+    #Wichtig: Erst das Banner, dann die Wetterdaten aufrufen!
+    zeige_banner()
     zeige_wetterdaten()
