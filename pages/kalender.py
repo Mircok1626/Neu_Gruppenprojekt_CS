@@ -2,18 +2,14 @@
 import streamlit as st
 st.title("Kalender")
 
-"""Wann kann ich spritzen?
+# Die Seite verbindet die Frist einer Infektion mit der Wetterprognose (Open-Meteo API) und zeigt für die nächsten 14 Tage eine Ampel: grün = geeignet, gelb = knapp, rot = nicht möglich.
 
-Die Seite verbindet die Frist einer Infektion mit der Wetterprognose
-(Open-Meteo API) und zeigt für die nächsten 14 Tage eine Ampel:
-grün = geeignet, gelb = knapp, rot = nicht möglich.
-"""
 
 import datetime as dt
 
 import pandas as pd
 import requests
-import streamlit as st
+
 
 
 
@@ -51,7 +47,7 @@ AMPEL = ["🟢 geeignet", "🟡 knapp", "🔴 nicht möglich"]
 
 @st.cache_data(ttl=3600)  # Wetter höchstens einmal pro Stunde neu laden
 def lade_wetter():
-    """Laedt die stündliche Wetterprognose für 14 Tage von Open-Meteo.
+    """Lädt die stündliche Wetterprognose für 14 Tage von Open-Meteo.
 
     Gibt eine Tabelle (DataFrame) mit einer Zeile pro Stunde zurück.
     """
@@ -156,7 +152,6 @@ def bewerte_tag(datum, tag, grenzen, sonntag_sperren, hitze_zaehlt):
 # Seite aufbauen
 
 
-st.title("Kalender – wann kann ich spritzen?")
 st.write("Die Ampel verbindet die Frist der Infektion mit der Wetterprognose "
          "und zeigt den besten Tag vor Ablauf der Frist.")
 
@@ -173,7 +168,7 @@ with spalte2:
                           value=heute + dt.timedelta(days=7),
                           format="DD.MM.YYYY")
 with spalte3:
-    st.write("")  # kleiner Abstand, damit das Haekchen auf gleicher Hoehe ist
+    st.write("")  # kleiner Abstand, damit das Häkchen auf gleicher Hoehe ist
     sonntag_sperren = st.checkbox("Sonntag sperren", value=True)
 
 hitze_zaehlt = MITTEL[mittel]
@@ -199,7 +194,7 @@ try:
     wetter = lade_wetter()
 except Exception:
     st.error("Die Wetterdaten von Open-Meteo konnten nicht geladen werden. Bitte später nochmals versuchen.")
-    st.stop()  # Rest der Seite nicht ausfuehren
+    st.stop()  # Rest der Seite nicht ausführen
 
 #  Jeden Tag bewerten 
 tage = []
