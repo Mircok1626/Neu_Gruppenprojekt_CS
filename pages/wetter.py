@@ -62,3 +62,22 @@ def lade_wetter (tage_zurueck=21, tage_voraus=14):
         "forecast_days": tage_voraus, 
         "timezone": "Europe/Zurich", 
     }
+    #Anfrage senden; timeout=10 heisst: nach 10 Sekunden aufgeben 
+    antwort = request.get(url, params=parameter, timeout=10)
+    antwort.raise_for_status() #löst einen Fehler aus, falls etwas schiefging
+
+    #Die Antwort ist JSON; wir brauchen nur den Teil "daily"
+    daten = antwort.json()["daily"]
+
+    #Daraus bauen wir eine übersichtliche Tabelle 
+    tabelle = pd.DataFrame({
+        "datum": pd.to_datetime(daten["time"]),
+        "temperatur": daten["temperature_2m_mean"],
+        "regen_mm": daten["precipitation_sum"]
+    })
+
+    #Alles nach heute ist Prognose (brauchen wir später für die "heut"-Linie)
+    heute = pd.Timestamp.today().normaliz()
+    tabelle["ist_prognose"] = tabelle["datum"] > heute
+
+    return tabelle 
