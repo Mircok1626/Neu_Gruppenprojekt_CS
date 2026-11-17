@@ -1,7 +1,6 @@
 import streamlit as st
 import pandas as pd
 import requests
-# >>> NEU: Altair für kombinierte Diagramme & Schwellenwert-Linien <<<
 import altair as alt
 
 # Koordinaten der Station Zizers (für die Open-Meteo-Abfrage)
@@ -10,7 +9,6 @@ ZIZERS_LON = 9.57
 
 def zeige_banner():
     """Zeigt den weinroten Banner oben auf der Wetter-Seite."""
-    # >>> GEÄNDERT: Ort/Saison-Zeile & angepasster Titel wie im Mockup <<<
     st.markdown("""
     <div style="
         background-color: #7B1E3A;
@@ -32,19 +30,21 @@ def zeige_banner():
     """, unsafe_allow_html=True)
 
 @st.cache_data(ttl=3600)
-# >>> GEÄNDERT: Lädt jetzt die komplette Saison ab 1.1. statt nur 21 Tage <<<
 def lade_wetter_saison():
-    """Lädt alle Wetterdaten ab dem 1. Januar des aktuellen Jahres bis +14 Tage Prognose."""
+    """Lädt Wetterdaten von Open-Meteo (begrenzt auf max. 90 vergangene Tage, um API-Limits zu wahren)."""
     heute = pd.Timestamp.today().normalize()
+    
+    # Open-Meteo erlaubt maximal ca. 92 past_days. Wir nehmen sicherheitshalber max 90 Tage.
     jahresstart = pd.Timestamp(year=heute.year, month=1, day=1)
     tage_seit_jahresstart = (heute - jahresstart).days
+    past_days = min(tage_seit_jahresstart, 90)
 
     url = "https://api.open-meteo.com/v1/forecast"
     parameter = {
         "latitude": ZIZERS_LAT,
         "longitude": ZIZERS_LON,
         "daily": "temperature_2m_mean,precipitation_sum",
-        "past_days": tage_seit_jahresstart,
+        "past_days": past_days,
         "forecast_days": 14,
         "timezone": "Europe/Zurich",
     }
@@ -63,19 +63,17 @@ def lade_wetter_saison():
     df["regen_mm"] = df["regen_mm"].fillna(0.0)
     df["ist_prognose"] = df["datum"] > heute
 
-    # >>> NEU: Berechnung der Temperatursumme seit 1.1. (Tage > 8 °C) <<<
+    # Berechnungen für Modelle
     df["temp_ueber_8"] = (df["temperatur"] - 8.0).clip(lower=0.0)
     df["temperatursumme"] = df["temp_ueber_8"].cumsum()
     df["keimbereit"] = df["temperatursumme"] >= 140.0
 
-    # >>> NEU: Berechnung der Gradstunden bei Blattnässe & Infektions-Logik <<<
     blattnaesse_stunden = df["regen_mm"].apply(lambda r: min(24.0, r * 3.5) if r > 0.2 else 0.0)
     df["gradstunden"] = (blattnaesse_stunden * df["temperatur"].clip(lower=0.0)).round(0)
     df["infektion"] = df["keimbereit"] & (df["gradstunden"] >= 160)
 
     return df
 
-# >>> NEU: Komplette Funktion für Diagramm 1 (Temperatur + Regen + Infektionspunkte) <<<
 def zeige_kombi_diagramm(df_anzeige, heute):
     """Diagramm 1: Temperatur (Linie), Regen (Balken) und Infektions-Punkte."""
     with st.container(border=True):
@@ -111,7 +109,6 @@ def zeige_kombi_diagramm(df_anzeige, heute):
 
         st.altair_chart(chart, use_container_width=True)
 
-# >>> NEU: Komplette Funktion für Diagramm 2 (Gradstunden bei Blattnässe) <<<
 def zeige_gradstunden_diagramm(df_anzeige, heute):
     """Diagramm 2: Gradstunden bei Blattnässe mit Schwellenwerten."""
     with st.container(border=True):
@@ -141,11 +138,10 @@ def zeige_gradstunden_diagramm(df_anzeige, heute):
         chart = alt.layer(balken, schwelle_160, heute_linie).properties(height=250)
         st.altair_chart(chart, use_container_width=True)
 
-# >>> NEU: Komplette Funktion für Diagramm 3 (Temperatursumme seit 1.1.) <<<
 def zeige_temperatursumme_diagramm(df_gesamt):
-    """Diagramm 3: Temperatursumme seit 1.1. mit 140-Grad-Linie."""
+    """Diagramm 3: Temperatursumme seit Saisonbeginn mit 140-Grad-Linie."""
     with st.container(border=True):
-        st.subheader("Temperatursumme seit 1.1.")
+        st.subheader("Temperatursumme")
         st.caption("Jeder Tag zählt mit, so viel er über 8 °C warm ist. Ab 140 sind die Wintersporen keimbereit.")
 
         basis = alt.Chart(df_gesamt).encode(x=alt.X("datum:T", title=None, axis=alt.Axis(format="%d.%m.")))
@@ -162,12 +158,10 @@ def zeige_temperatursumme_diagramm(df_gesamt):
         chart = alt.layer(kurve, linie_140).properties(height=250)
         st.altair_chart(chart, use_container_width=True)
 
-# >>> GEÄNDERT: Hauptfunktion steuert jetzt Zeitraum-Filter und alle 3 Diagramme <<<
 def hauptseite():
     """Baut die komplette Wetter-Seite auf."""
     zeige_banner()
 
-    # Zeitraum-Buttons oben
     zeitraum = st.radio(
         "Zeitraum",
         ["Saison", "3 Wochen + Prognose", "14 Tage voraus"],
@@ -177,12 +171,11 @@ def hauptseite():
     )
 
     try:
-        with st.spinner("Lade Wetterdaten und berechne Infektionsmodell..."):
+        with st.spinner("Lade Wetterdaten..."):
             df_gesamt = lade_wetter_saison()
 
         heute = pd.Timestamp.today().normalize()
 
-        # Filter für die oberen zwei Diagramme
         if zeitraum == "3 Wochen + Prognose":
             start_datum = heute - pd.Timedelta(days=21)
             df_anzeige = df_gesamt[df_gesamt["datum"] >= start_datum]
@@ -191,7 +184,6 @@ def hauptseite():
         else:
             df_anzeige = df_gesamt
 
-        # Alle 3 Karten/Diagramme untereinander darstellen
         zeige_kombi_diagramm(df_anzeige, heute)
         zeige_gradstunden_diagramm(df_anzeige, heute)
         zeige_temperatursumme_diagramm(df_gesamt)
