@@ -91,3 +91,70 @@ with links:
 mittel = MITTEL[mittel_name]
 basis = STADIEN[stadium]
 einheit = mittel["einheit"]
+
+
+# Formel 1: Mittel pro Hektare
+mittel_pro_ha = mittel["konzentration"] / 100 * basis
+
+# Formel 2: Mittel für die ganze Parzelle
+mittel_total = mittel_pro_ha * flaeche
+
+# Formel 3: Wasser für die ganze Parzelle
+wasser_total = wasser_pro_ha * flaeche
+
+# Formel 4: Wie oft muss der Tank gefüllt werden? math.ceil rundet auf.
+tankfuellungen = math.ceil(wasser_total / tank)
+
+# Formel 5: Mittel pro volle Tankfüllung
+mittel_pro_tank = mittel_pro_ha * tank / wasser_pro_ha
+
+# Formel 6: Konzentrierung (wie viel stärker die Brühe ist als normal)
+konzentrierung = basis / wasser_pro_ha
+
+# Kupfer, das mit dieser Spritzung pro Hektare ausgebracht wird
+kupfer_pro_ha = mittel_pro_ha * mittel["kupfer"]
+
+with rechts:
+    # Zuerst prüfen: Ist das Mittel in diesem Stadium erlaubt?
+    if stadium not in mittel["stadien"]:
+        st.error(f"{mittel_name} ist im Stadium «{stadium}» nicht erlaubt.")
+
+    else:
+        # Weinrote Box wie auf der Startseite (HTML mit f-String)
+        st.markdown(f"""
+<div style="background-color:#7B1E3A; color:white; padding:24px 32px; border-radius:20px;">
+<p style="margin:0; letter-spacing:2px; color:#F3D9DF;">TANKREZEPT · {mittel_name}</p>
+<h2 style="color:white;">{tankfuellungen} Tankfüllungen</h2>
+<p style="font-size:18px; margin:0;">
+Pro volle Füllung: <b>{tank} l Wasser + {mittel_pro_tank:.2f} {einheit} Mittel</b><br>
+Total: {mittel_total:.2f} {einheit} Mittel in {wasser_total:.0f} l Wasser<br>
+Konzentrierung: {konzentrierung:.1f}-fach
+</p>
+</div>
+""", unsafe_allow_html=True)
+
+        st.write("")  # etwas Abstand
+
+        # Button 1: Werte für das Journal merken.
+        # st.session_state ist ein Speicher, den alle Seiten lesen können.
+        if st.button("Ins Journal übernehmen"):
+            st.session_state["dosierung_vorschlag"] = {
+                "stadium": stadium,
+                "mittel": mittel_name,
+                "flaeche": flaeche,
+                "wasser_pro_ha": wasser_pro_ha,
+                "menge": round(mittel_total, 2),
+                "einheit": einheit,
+            }
+            st.success("Gespeichert. Das Journal kann die Werte übernehmen.")
+
+        # Button 2: Rezept als Textdatei herunterladen, um es auszudrucken.
+        rezept_text = (
+            f"Tankrezept\n"
+            f"Mittel: {mittel_name}\n"
+            f"Stadium: {stadium}\n"
+            f"Tankfüllungen: {tankfuellungen}\n"
+            f"Pro Füllung: {tank} l Wasser + {mittel_pro_tank:.2f} {einheit}\n"
+            f"Total: {mittel_total:.2f} {einheit} in {wasser_total:.0f} l Wasser\n"
+        )
+        st.download_button("Rezept herunterladen (zum Drucken)", rezept_text, "tankrezept.txt")
