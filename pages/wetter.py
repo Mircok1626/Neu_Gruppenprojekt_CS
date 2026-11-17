@@ -84,11 +84,26 @@ def zeige_wetterdaten():
     #zeigen wir eine Meldung statt einer roten Fehlerseite.
     try:
         tabelle = lade_wetter()
-        st.dataframe(tabelle, use_container_width=True)
-        st.caption("Quelle: Open-Meteo")
+
+        #Wir setzen das Datum als Index für schöne Diagramme
+        df_chart = tabelle.set_index("datum")
+
+        #1. Temperatur-Diagramm
+        st.markdown("### 🌡️ Durchschnittstemperatur (°C)")
+        st.line_chart(df_chart["temperatur"])
+
+        # 2. Regen-Diagramm
+        st.markdown("### 🌧️ Niederschlag (mm)")
+        st.bar_chart(df_chart["regen_mm"])
+
+        #Zum Aufklappen: Die Rohdaten als Tabelle (falls man sie im Detail braucht)
+        with st.expander("Rohdaten-Tabelle anzeigen"):
+            st.dataframe(tabelle, use_container_width=True)
+            st.caption("Quelle: Open-Meteo")
+
     except requests.RequestException:
         st.error("Wetterdaten konnten nicht geladen werden. Bitte später erneut versuchen.")
 
-#Hier wird die Seite aufgebaut (Reihenfolge = Reienfolge auf der Seite)
-zeige_banner()
-zeige_wetterdaten()
+    #Seite aufbauen 
+    zeigen_banner()
+    zeige_wetterdaten()
