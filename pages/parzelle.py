@@ -11,7 +11,7 @@ STATIONEN = {
 }
 
 st.title("Parzellen – welche Rebberge habe ich?")
-st.caption("Hier erfasst du deine Rebberge einmal. Die anderen Seiten rechnen dann mit diesen Angaben.")
+st.caption("Deine Rebberge mit Fläche, Sorte und Wetterstation.")
 
 # Verbindung zur Datenbank. Gibt es die Datei noch nicht, wird sie erstellt. ->über con mit Datenbank sprechen
 con = sqlite3.connect("daten/spritzplaner.db")
@@ -40,7 +40,7 @@ with spalte3.container(border=True):
     st.metric("Wetterstationen", parzellen["station"].nunique())
 
 # Parzellen als Tabelle anzeigen
-st.subheader("Meine Parzellen")
+st.subheader("Übersicht")
 
 if parzellen.empty:
     st.info("Es gibt noch keine Parzellen. Lege unten deine erste an.")
@@ -57,7 +57,7 @@ else:
     )
 
 # Formular für eine neue Parzelle
-st.subheader("Neue Parzelle anlegen")
+st.subheader("Neue Parzelle")
 
 with st.form("neue_parzelle", border=True):
     links, rechts = st.columns(2)   # Formular in zwei Spalten
