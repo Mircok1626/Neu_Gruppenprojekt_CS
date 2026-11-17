@@ -41,6 +41,19 @@ MERKMALE = ["temp_min", "temp_mittel", "temp_max", "niederschlag_mm", "regen_vor
 # Eine verpasste Infektion kostet Ernte, ein Fehlalarm nur einen Kontrollgang.
 WARNSCHWELLE = 0.3
 
+# Spritzsaison gegen Falschen Mehltau: ab Austrieb bis zum Weichwerden der Trauben.
+# Ausserhalb der Saison wird nicht gespritzt, also warnt der Kalender auch nicht.
+# PLATZHALTER: Das Saisonende (Weichwerden) noch mit dem Winzer bestätigen.
+SAISON_START = (4, 1)    # 1. April
+SAISON_ENDE = (8, 31)    # 31. August
+
+
+def in_saison(daten):
+    """Gibt für jedes Datum True (in der Spritzsaison) oder False (ausserhalb) zurück."""
+    # Monat und Tag als eine Zahl, z. B. 15. Mai = 515, damit man einfach vergleichen kann
+    zahl = daten.dt.month * 100 + daten.dt.day
+    return (zahl >= SAISON_START[0] * 100 + SAISON_START[1]) & (zahl <= SAISON_ENDE[0] * 100 + SAISON_ENDE[1])
+
 
 # ---------------------------------------------------------------------------
 # Machine Learning: aus den Agrometeo-Daten lernen
@@ -92,6 +105,7 @@ def trainiere_modell():
 
     # Test mit 2026: Tage, die das Modell beim Lernen nie gesehen hat
     test = lade_agrometeo(2026)
+    test = test[in_saison(test["datum"])]   # gezählt werden nur Tage in der Spritzsaison
     vorhersage = (modell.predict_proba(test[MERKMALE])[:, 1] >= WARNSCHWELLE).astype(int)
     echt = test["infektion"]
     ergebnis = {
@@ -106,6 +120,7 @@ def trainiere_modell():
 def erkenne_infektionen(tageswetter, modell, dauer_pro_monat):
     """Das Modell schaut sich jeden Tag an und sagt, ob es eine Infektion gibt."""
     df = tageswetter.dropna(subset=MERKMALE).copy()
+    df = df[in_saison(df["datum"])]   # ausserhalb der Saison keine Warnung
     if df.empty:   # keine Wetterdaten: dann auch keine Infektionen
         return pd.DataFrame(columns=["start", "ende", "frist", "stufe"])
     # Wahrscheinlichkeit für eine Infektion (0 bis 1). Ab der Warnschwelle zählt es als Infektion.
@@ -269,7 +284,11 @@ with bereich_ampel:
         </div>""", unsafe_allow_html=True)
     else:
         frist, gute = None, []
-        st.info("Keine offene Infektion. Spritzen ist im Moment nicht nötig.")
+        if in_saison(pd.Series([pd.Timestamp(heute)])).iloc[0]:
+            st.info("Keine offene Infektion. Spritzen ist im Moment nicht nötig.")
+        else:
+            st.info("Ausserhalb der Spritzsaison (April bis August). "
+                    "Gegen Falschen Mehltau wird jetzt nicht gespritzt.")
 
     # Spritzfenster: 14 Kacheln in 2 Reihen
     st.subheader("Spritzfenster: 14 Tage")
@@ -331,9 +350,10 @@ with st.expander("Wie erkennt der Kalender Infektionen? (Machine Learning)"):
         "**2024 und 2025** gelernt, bei welchem Wetter es eine Infektion gibt: "
         "Temperatur (min, Mittel, max), Regen am Tag und am Vortag sowie die Jahreszeit. "
         "Jetzt schaut er sich das Wetter von Open-Meteo an und sagt für jeden Tag, "
-        "ob es eine Infektion gibt. Ab einem Risiko von 30 % warnt der Kalender."
+        "ob es eine Infektion gibt. Ab einem Risiko von 30 % warnt der Kalender, "
+        "aber nur in der Spritzsaison (April bis August)."
     )
-    st.markdown("**Test mit 2026** (Tage, die das Modell beim Lernen nie gesehen hat):")
+    st.markdown("**Test mit der Saison 2026** (Tage, die das Modell beim Lernen nie gesehen hat):")
     k1, k2, k3 = st.columns(3)
     k1.metric("Infektionen erkannt", f"{ergebnis['erkannt']} von {ergebnis['total']}")
     k2.metric("Verpasst", ergebnis["verpasst"])
