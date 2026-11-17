@@ -84,7 +84,7 @@ def zeige_wetterdaten():
     #zeigen wir eine Meldung statt einer roten Fehlerseite.
     try:
         with st.spinner("Lade Wetterdaten von Open-Meteo..."):
-        tabelle = lade_wetter()
+            tabelle = lade_wetter()
 
         #Wir setzen das Datum als Index für schöne Diagramme
         df_chart = tabelle.set_index("datum")
@@ -102,10 +102,10 @@ def zeige_wetterdaten():
             st.dataframe(tabelle, use_container_width=True)
             st.caption("Quelle: Open-Meteo")
 
-    except Exception e:
+    except Exception as e:
         st.error(f"Fehler beim Laden der Wetterdaten: {e}")
 
     # --- SEITENAUFBAU ---
     #Wichtig: Erst das Banner, dann die Wetterdaten aufrufen!
-    zeige_banner()
-    zeige_wetterdaten()
+zeige_banner()
+zeige_wetterdaten()
