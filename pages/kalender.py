@@ -28,17 +28,21 @@ FARBEN = ["#D9EAD3", "#FFF2CC", "#F4CCCC"]  # grün, gelb, rot
 AMPEL = ["geeignet", "knapp", "nicht möglich"]
 WOCHENTAGE = ["Mo", "Di", "Mi", "Do", "Fr", "Sa", "So"]
 
-# Mittel: True heisst hitzeempfindlich, nur dann zählt Hitze in der Ampel (Platzhalter)
-MITTEL = {"Folpet 80 WG": False, "Kupfer": False, "Schwefel": True}
+# Wir spritzen nur mit Folpet 80 WG (wie auf der Seite Dosierung).
+# Folpet ist nicht hitzeempfindlich, darum zählen in der Ampel nur Regen und Wind.
 
 # Startwerte der Ampel: (gelb ab, rot ab, Einheit), noch mit dem Winzer bestätigen
-STANDARD = {"Regen": (0.5, 2.0, "mm"), "Wind": (15.0, 25.0, "km/h"), "Hitze": (25.0, 30.0, "°C")}
+STANDARD = {"Regen": (0.5, 2.0, "mm"), "Wind": (15.0, 25.0, "km/h")}
+
+# Farbe für Tage, an denen der Belag der letzten Spritzung noch schützt
+GRAU = "#EEEEEE"
 
 # Wettermerkmale, aus denen das Modell lernt. Diese Werte gibt es sowohl in den
 # Agrometeo-Daten (Vergangenheit) als auch bei Open-Meteo (Prognose).
 MERKMALE = ["temp_min", "temp_mittel", "temp_max", "niederschlag_mm", "regen_vortag", "tag_im_jahr"]
 
-# Ab diesem Risiko zählt ein Tag als Infektion. Bewusst tief (30 % statt 50 %):
+# Das Modell besteht aus 300 Bäumen, die abstimmen. Sagen mindestens 30 % davon
+# «Infektion», gilt der Tag als Infektion. Bewusst vorsichtig (nicht erst ab 50 %):
 # Eine verpasste Infektion kostet Ernte, ein Fehlalarm nur einen Kontrollgang.
 WARNSCHWELLE = 0.3
 
@@ -127,10 +131,10 @@ def erkenne_infektionen(tageswetter, modell, dauer_pro_monat):
     df = tageswetter.dropna(subset=MERKMALE).copy()
     df = df[in_saison(df["datum"])]   # ausserhalb der Saison keine Warnung
     if df.empty:   # keine Wetterdaten: dann auch keine Infektionen
-        return pd.DataFrame(columns=["start", "ende", "frist", "stufe"])
-    # Wahrscheinlichkeit für eine Infektion (0 bis 1). Ab der Warnschwelle zählt es als Infektion.
-    df["risiko"] = modell.predict_proba(df[MERKMALE])[:, 1]
-    df = df[df["risiko"] >= WARNSCHWELLE].copy()
+        return pd.DataFrame(columns=["start", "ende", "frist"])
+    # Das Modell entscheidet für jeden Tag: Infektion ja oder nein
+    stimmen = modell.predict_proba(df[MERKMALE])[:, 1]   # Anteil der Bäume, die «Infektion» sagen
+    df = df[stimmen >= WARNSCHWELLE].copy()               # nur die Tage mit Infektion behalten
 
     df["start"] = df["datum"]
     # Inkubationsdauer aus dem gelernten Durchschnitt des Monats (falls unbekannt: 10 Tage)
@@ -138,7 +142,6 @@ def erkenne_infektionen(tageswetter, modell, dauer_pro_monat):
     df["ende"] = df["start"] + pd.to_timedelta(dauer, unit="D")
     # Formel 3: spritzen bis = Infektionsdatum + 80 % der Inkubationsdauer
     df["frist"] = (df["start"] + (df["ende"] - df["start"]) * 0.8).dt.floor("D")
-    df["stufe"] = (df["risiko"] * 100).round().astype(int).astype(str) + " %"
     return df
 
 
@@ -159,20 +162,20 @@ def lade_spritzungen():
 
 
 def pruefe_schutz(infektionen, spritzungen):
-    """Gibt jeder Infektion einen Status: geschützt, behandelt oder offen.
+    """Gibt jeder Infektion einen Status: «gespritzt» oder «offen».
 
-    geschützt: Es wurde in den 10 Tagen vor der Infektion gespritzt, der Belag war schon da.
-    behandelt: Es wurde nach der Infektion gespritzt, aber noch vor der Frist.
+    gespritzt: Es wurde in den 10 Tagen vor der Infektion gespritzt (der Belag war schon da)
+               oder nach der Infektion, aber noch vor der Frist.
     offen:     Weder noch, der Winzer muss noch spritzen.
     """
     status = []
     for _, infektion in infektionen.iterrows():
         ergebnis = "offen"
         for spritztag in spritzungen["datum"]:
-            if spritztag <= infektion["start"] <= spritztag + pd.Timedelta(days=SCHUTZ_TAGE):
-                ergebnis = "geschützt"
-            elif infektion["start"] < spritztag <= infektion["frist"] and ergebnis == "offen":
-                ergebnis = "behandelt"
+            vorher_geschuetzt = spritztag <= infektion["start"] <= spritztag + pd.Timedelta(days=SCHUTZ_TAGE)
+            rechtzeitig_nachher = infektion["start"] < spritztag <= infektion["frist"]
+            if vorher_geschuetzt or rechtzeitig_nachher:
+                ergebnis = "gespritzt"
         status.append(ergebnis)
     infektionen["status"] = status
     return infektionen
@@ -192,7 +195,7 @@ def open_meteo_url(bis):
 def lade_wetter(von, bis):
     """Lädt das stündliche Wetter (Regen, Wind, Temperatur) für Zizers von Open-Meteo."""
     parameter = {"latitude": 46.94, "longitude": 9.56, "timezone": "Europe/Zurich",
-                 "hourly": "precipitation,wind_speed_10m,temperature_2m",
+                 "hourly": "precipitation,wind_speed_10m",
                  "start_date": str(von), "end_date": str(bis)}
     daten = requests.get(open_meteo_url(bis), params=parameter, timeout=10).json()["hourly"]
     wetter = pd.DataFrame(daten)
@@ -220,7 +223,7 @@ def lade_tageswetter(von, bis):
 # ---------------------------------------------------------------------------
 # Ampel
 # ---------------------------------------------------------------------------
-def bewerte_tag(tag, wetter, hitze_zaehlt, sonntag_sperren):
+def bewerte_tag(tag, wetter, sonntag_sperren):
     """Gibt Ampelstufe (0 grün, 1 gelb, 2 rot), beste Startzeit und Gründe für einen Tag zurück."""
     stunden = wetter[wetter["time"].dt.date == tag.date()].reset_index()
 
@@ -233,13 +236,10 @@ def bewerte_tag(tag, wetter, hitze_zaehlt, sonntag_sperren):
 
     fenster = stunden[start:start + 6]
     werte = {"Regen": fenster["precipitation"].sum(),
-             "Wind": fenster["wind_speed_10m"].max(),
-             "Hitze": fenster["temperature_2m"].max()}
+             "Wind": fenster["wind_speed_10m"].max()}
 
     stufe, gruende = 0, []
     for name, wert in werte.items():
-        if name == "Hitze" and not hitze_zaehlt:
-            continue
         gelb, rot = st.session_state[name + "_gelb"], st.session_state[name + "_rot"]
         if wert >= gelb:
             stufe = max(stufe, 2 if wert >= rot else 1)  # der schlechteste Wert bestimmt die Farbe
@@ -264,12 +264,11 @@ if "Regen_gelb" not in st.session_state:
 st.title("Kalender: Wann kann ich spritzen?")
 
 # Planungsleiste
-spalte1, spalte2, spalte3 = st.columns(3)
+spalte1, spalte2 = st.columns(2)
 heute = spalte1.date_input("Heute ist der", value=dt.date.today(), min_value=dt.date(2024, 1, 1),
                            max_value=dt.date.today(), format="DD.MM.YYYY", key="heute")
-mittel = spalte2.selectbox("Geplantes Mittel", list(MITTEL.keys()))
-spalte3.write("")
-sonntag_sperren = spalte3.checkbox("Sonntag sperren", value=True)
+spalte2.write("")
+sonntag_sperren = spalte2.checkbox("Sonntag sperren", value=True)
 
 # Platzhalter, damit Ampel und Inkubationen oberhalb der Grenzwerte erscheinen
 bereich_ampel = st.container()
@@ -305,21 +304,26 @@ spritzungen = spritzungen[spritzungen["datum"] <= pd.Timestamp(heute)]
 infektionen = pruefe_schutz(infektionen, spritzungen)
 
 # Laufende Inkubationen: Balken, die in die 14 Tage hineinreichen
-laufend = infektionen[(infektionen["start"] <= tage[-1]) & (infektionen["ende"] >= tage[0])].copy()
+laufend = infektionen[(infektionen["start"] <= tage[-1]) & (infektionen["ende"] > tage[0])].copy()
 # Schon passierte Infektionen, deren Frist noch nicht vorbei ist
 aktuell = laufend[(laufend["start"] <= tage[0]) & (laufend["frist"] >= tage[0])]
 # Offen sind davon nur die, gegen die noch nicht gespritzt wurde
 offen = aktuell[aktuell["status"] == "offen"]
-abgedeckt = aktuell[aktuell["status"] != "offen"]
+abgedeckt = aktuell[aktuell["status"] == "gespritzt"]
+
+# Bis wann schützt die letzte Spritzung? (keine Spritzung: dann schützt nichts)
+if len(spritzungen) > 0:
+    geschuetzt_bis = spritzungen["datum"].iloc[-1] + pd.Timedelta(days=SCHUTZ_TAGE)
+else:
+    geschuetzt_bis = None
 
 # Jeden Tag bewerten
-bewertung = [bewerte_tag(tag, wetter, MITTEL[mittel], sonntag_sperren) for tag in tage]
+bewertung = [bewerte_tag(tag, wetter, sonntag_sperren) for tag in tage]
 
 with bereich_ampel:
     # Letzte Spritzung aus dem Journal anzeigen
     if len(spritzungen) > 0:
         letzte = spritzungen.iloc[-1]
-        geschuetzt_bis = letzte["datum"] + pd.Timedelta(days=SCHUTZ_TAGE)
         if geschuetzt_bis >= pd.Timestamp(heute):
             st.success(f"Letzte Spritzung laut Journal: {letzte['datum']:%d.%m.} mit {letzte['mittel']} "
                        f"→ geschützt bis {geschuetzt_bis:%d.%m.}")
@@ -348,7 +352,7 @@ with bereich_ampel:
             weitere = ""
         st.markdown(f"""
         <div style="background-color: {WEINROT}; color: white; padding: 20px; border-radius: 15px;">
-            <p style="margin: 0; color: #F3D9DF;">Infektion am {infektion['start']:%d.%m.} · Wetter an diesem Tag: {wetter_text} · Risiko {infektion['stufe']}</p>
+            <p style="margin: 0; color: #F3D9DF;">Infektion am {infektion['start']:%d.%m.} · Wetter an diesem Tag: {wetter_text}</p>
             <h3 style="margin: 0; color: white;">Spritzen bis {WOCHENTAGE[frist.weekday()]}, {frist:%d.%m.}</h3>
             <p style="margin: 0;">{empfehlung}{weitere}</p>
         </div>""", unsafe_allow_html=True)
@@ -365,8 +369,24 @@ with bereich_ampel:
             st.info("Ausserhalb der Spritzsaison (April bis August). "
                     "Gegen Falschen Mehltau wird jetzt nicht gespritzt.")
 
-    # Spritzfenster: 14 Kacheln in 2 Reihen
-    st.subheader("Spritzfenster: 14 Tage")
+    # Spritzfenster: Überschrift links, Legende der Farben rechts
+    titel, legende = st.columns([1, 2], vertical_alignment="bottom")
+    titel.subheader("Spritzfenster: 14 Tage")
+
+    def kaestchen(farbe, rand="1px solid #CCCCCC"):
+        """Kleines farbiges Quadrat für die Legende."""
+        return (f"<span style='display:inline-block; width:12px; height:12px; background:{farbe}; "
+                f"border:{rand}; border-radius:3px; margin:0 4px 0 14px; vertical-align:middle;'></span>")
+
+    legende.markdown(
+        "<div style='text-align:right; font-size:13px;'>"
+        + kaestchen(FARBEN[0]) + "Geeignet"
+        + kaestchen(FARBEN[1]) + "Knapp"
+        + kaestchen(FARBEN[2]) + "Nicht möglich"
+        + kaestchen(GRAU) + "Geschützt"
+        + kaestchen("white", f"3px solid {GOLD}") + "Empfohlen"
+        + "</div>", unsafe_allow_html=True)
+
     spalten = st.columns(7) + st.columns(7)
     for spalte, tag, (stufe, start, gruende) in zip(spalten, tage, bewertung):
         marken = []
@@ -379,7 +399,11 @@ with bereich_ampel:
         if tag in list(spritzungen["datum"]):
             marken.append("gespritzt")
 
-        farbe, text = FARBEN[stufe], AMPEL[stufe] + (f"<br>ab {start} Uhr" if stufe < 2 else "")
+        # Noch geschützt und keine offene Infektion: Spritzen ist nicht nötig, also keine Ampel
+        if len(offen) == 0 and geschuetzt_bis is not None and tag <= geschuetzt_bis:
+            farbe, text, gruende = GRAU, "geschützt<br>nicht nötig", []
+        else:
+            farbe, text = FARBEN[stufe], AMPEL[stufe] + (f"<br>ab {start} Uhr" if stufe < 2 else "")
         rahmen = f"3px solid {GOLD}" if len(gute) > 0 and tag == gute[0] else "1px solid #CCCCCC"
 
         spalte.markdown(f"""
@@ -389,35 +413,40 @@ with bereich_ampel:
             <small>{", ".join(gruende)}</small><br>
             <b style="color: {WEINROT};">{" · ".join(marken)}</b>
         </div>""", unsafe_allow_html=True)
-    st.caption("Die Farbe zeigt, ob das Wetter zum Spritzen passt. "
-               "Goldener Rahmen: empfohlener Tag (erster grüner Tag vor der Frist).")
 
 with bereich_inkubation:
     st.subheader("Laufende Inkubationen")
     if len(laufend) == 0:
         st.write("Keine laufenden Inkubationen in diesen 14 Tagen.")
     else:
-        # Name des Balkens, z. B. "06.08. (71 %) · geschützt"
-        laufend["name"] = laufend["start"].dt.strftime("%d.%m.") + " (" + laufend["stufe"] + ") · " + laufend["status"]
-        laufend["art"] = "berechnet"
-        laufend.loc[laufend["start"] > tage[0], "art"] = "Prognose"
-        achse = alt.X("start:T", title=None, scale=alt.Scale(domain=[tage[0], tage[-1] + pd.Timedelta(days=1)]),
-                      axis=alt.Axis(format="%d.%m.", tickCount=14))
-        zeile = alt.Y("name:N", title="Infektion", sort=alt.SortField("start"))  # nach Datum sortiert
+        # Name des Balkens, z. B. "06.08. · offen" oder "06.08. · gespritzt"
+        laufend["name"] = laufend["start"].dt.strftime("%d.%m.") + " · " + laufend["status"]
+        # Farbe: offen = weinrot, gespritzt = grün, Infektion erst in der Prognose = hell
+        laufend["art"] = laufend["status"]
+        laufend.loc[(laufend["start"] > tage[0]) & (laufend["status"] == "offen"), "art"] = "Prognose"
         laufend["frist_text"] = "spritzen bis " + laufend["frist"].dt.strftime("%d.%m.")
-        balken = alt.Chart(laufend).mark_bar(color=WEINROT, stroke=WEINROT, clip=True, height=20).encode(
+
+        achse = alt.X("start:T", title=None, scale=alt.Scale(domain=[tage[0], tage[-1] + pd.Timedelta(days=1)]),
+                      axis=alt.Axis(format="%d.%m.", tickCount=14, grid=True))
+        zeile = alt.Y("name:N", title=None, sort=alt.SortField("start"))  # nach Datum sortiert
+        farben = alt.Scale(domain=["offen", "gespritzt", "Prognose"], range=[WEINROT, "#6AA84F", "#D9A5B3"])
+
+        # Balken vom Infektionstag bis zum Ende der Inkubation
+        balken = alt.Chart(laufend).mark_bar(height=18, cornerRadius=4, clip=True).encode(
             x=achse, x2="ende:T", y=zeile,
-            opacity=alt.Opacity("art:N", title=None, scale=alt.Scale(domain=["berechnet", "Prognose"], range=[0.9, 0.2])),
-            strokeDash=alt.StrokeDash("art:N", title=None, scale=alt.Scale(domain=["berechnet", "Prognose"], range=[[1, 0], [5, 3]])))
-        striche = alt.Chart(laufend).mark_tick(color=GOLD, thickness=4, size=20, clip=True).encode(
+            color=alt.Color("art:N", scale=farben, title=None, legend=alt.Legend(orient="bottom")))
+        # Goldener Strich bei der Frist, Beschriftung rechts daneben
+        striche = alt.Chart(laufend).mark_tick(color=GOLD, thickness=3, size=24, clip=True).encode(
             x="frist:T", y=zeile)
-        # Beschriftung über dem goldenen Strich, damit man sofort sieht, dass er die Frist ist
-        texte = alt.Chart(laufend).mark_text(dy=-17, color="#8A6D1F", fontWeight="bold", clip=True).encode(
-            x="frist:T", y=zeile, text="frist_text:N")
-        st.altair_chart((balken + striche + texte).properties(height=50 * len(laufend)))
+        # Auf dem dunkelroten Balken weisse Schrift, sonst dunkle Schrift (besser lesbar)
+        texte = alt.Chart(laufend).mark_text(align="left", dx=6, fontWeight="bold", clip=True).encode(
+            x="frist:T", y=zeile, text="frist_text:N",
+            color=alt.condition(alt.datum.art == "offen", alt.value("white"), alt.value("#5C4A12")))
+
+        diagramm = (balken + striche + texte).properties(height=40 * len(laufend) + 20)
+        st.altair_chart(diagramm, width="stretch")
         st.caption("Balken: vom Infektionstag bis zum Ende der Inkubation. "
-                   "Voller Balken: schon passiert, heller gestrichelter Balken: Prognose. "
-                   "In Klammern: wie sicher sich das Modell ist.")
+                   "Goldener Strich: bis dann muss gespritzt sein.")
 
 # Erklärung des Modells (aufklappbar)
 with st.expander("Wie erkennt der Kalender Infektionen? (Machine Learning)"):
@@ -426,8 +455,8 @@ with st.expander("Wie erkennt der Kalender Infektionen? (Machine Learning)"):
         "**2024 und 2025** gelernt, bei welchem Wetter es eine Infektion gibt: "
         "Temperatur (min, Mittel, max), Regen am Tag und am Vortag sowie die Jahreszeit. "
         "Jetzt schaut er sich das Wetter von Open-Meteo an und sagt für jeden Tag, "
-        "ob es eine Infektion gibt. Ab einem Risiko von 30 % warnt der Kalender, "
-        "aber nur in der Spritzsaison (April bis August)."
+        "ob es eine Infektion gibt: ja oder nein. Gewarnt wird nur in der Spritzsaison "
+        "(April bis August)."
     )
     st.markdown("**Test mit der Saison 2026** (Tage, die das Modell beim Lernen nie gesehen hat):")
     k1, k2, k3 = st.columns(3)
