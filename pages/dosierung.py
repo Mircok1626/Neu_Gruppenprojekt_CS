@@ -127,3 +127,70 @@ with rechts:
 <p style="font-size:18px; margin:0 0 12px 0;">
 {zeilen}
 </p>
+<p style="margin:0; color:#F3D9DF;">
+Total: {mittel_total:.2f} {EINHEIT} {MITTEL} in {wasser_total:.0f} l Wasser
+</p>
+</div>
+""", unsafe_allow_html=True)
+
+    st.write("")  # etwas Abstand
+
+    # Die Formeln zum Aufklappen, direkt unter dem Tankrezept
+    with st.expander("So wird gerechnet"):
+        st.markdown("""
+1. Mittel pro ha = Konzentration ÷ 100 × Basisbrühmenge
+2. Mittel total = Mittel pro ha × Fläche
+3. Wasser total = Wasser pro ha × Fläche
+4. Tankfüllungen = Wasser total ÷ Tankgrösse, aufgerundet
+5. Mittel pro Füllung = Mittel pro ha × Wasser in dieser Füllung ÷ Wasser pro ha
+""")
+
+    # Button: Werte für das Journal merken.
+    # st.session_state ist ein Speicher, den alle Seiten lesen können.
+    if st.button("Ins Journal übernehmen"):
+        st.session_state["dosierung_vorschlag"] = {
+            "datum": spritztag,
+            "parzelle": parzelle,
+            "stadium": stadium,
+            "mittel": MITTEL,
+            "flaeche": flaeche,
+            "wasser_pro_ha": wasser_pro_ha,
+            "menge": round(mittel_total, 2),
+            "einheit": EINHEIT,
+        }
+        st.switch_page("pages/journal.py")   # direkt zum Journal wechseln
+
+
+st.subheader(f"{MITTEL}: Menge pro ha je Stadium")
+
+# Zwei leere Listen: eine für die Namen, eine für die Mengen.
+stadien_namen = []
+mengen = []
+for name in STADIEN:
+    stadien_namen.append(name)
+    mengen.append(KONZENTRATION / 100 * STADIEN[name])
+
+# Aus den zwei Listen eine Tabelle machen (Altair braucht eine Tabelle)
+tabelle = pd.DataFrame({"Stadium": stadien_namen, "Menge": mengen})
+
+# Säulen: x = Stadium, y = Menge. Die y-Achse geht fest von 0 bis etwas über
+# die grösste Menge (× 1.2), damit nichts ins Minus geht und oben Platz für die Zahlen bleibt.
+balken = alt.Chart(tabelle).mark_bar(color="#7B1E3A", cornerRadiusTopLeft=6, cornerRadiusTopRight=6).encode(
+    x=alt.X("Stadium:N", sort=None, title=None, axis=alt.Axis(labelAngle=0)),   # Namen waagrecht
+    y=alt.Y("Menge:Q", title=f"{EINHEIT} pro ha", scale=alt.Scale(domain=[0, max(mengen) * 1.2])),
+    tooltip=[alt.Tooltip("Stadium:N"), alt.Tooltip("Menge:Q", title=f"{EINHEIT} pro ha", format=".2f")],
+)
+
+# Die Zahl direkt über jede Säule schreiben (z. B. «1.50»)
+zahlen = alt.Chart(tabelle).mark_text(dy=-10, fontWeight="bold", color="#7B1E3A").encode(
+    x=alt.X("Stadium:N", sort=None),
+    y="Menge:Q",
+    text=alt.Text("Menge:Q", format=".2f"),
+)
+
+# Säulen und Zahlen übereinanderlegen und anzeigen
+st.altair_chart((balken + zahlen).properties(height=320), width="stretch")
+
+st.divider()
+st.caption("Quelle: Agroscope, Pflanzenschutzmittelliste für den Rebbau 2026. "
+           "Immer die Etikette des Mittels beachten. Die App ist eine Entscheidungshilfe.")
