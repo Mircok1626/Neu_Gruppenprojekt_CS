@@ -327,7 +327,13 @@ gemessen = infektionen_von_agrometeo(heute - dt.timedelta(days=14), heute)
 # Zukunft (Prognose): hier hilft das Modell, weil Agrometeo diese Tage noch nicht kennt
 zukunft = tageswetter[tageswetter["datum"] > pd.Timestamp(heute)]
 prognose = erkenne_infektionen(zukunft, modell, dauer_pro_monat)
+# Merken, woher jede Infektion kommt: gemessen (Agrometeo) oder geschätzt (Modell)
+gemessen["quelle"] = "gemessen"
+prognose["quelle"] = "Prognose"
 infektionen = pd.concat([gemessen, prognose], ignore_index=True)
+# Nach dem Zusammenfügen sicherstellen, dass diese Spalten wirklich Datumswerte sind
+for spalte in ["start", "ende", "frist"]:
+    infektionen[spalte] = pd.to_datetime(infektionen[spalte])
 
 # Spritzungen aus dem Journal holen (nur bis «heute», wichtig für den Demo-Modus)
 spritzungen = lade_spritzungen()
@@ -451,17 +457,22 @@ with bereich_inkubation:
     if len(laufend) == 0:
         st.write("Keine laufenden Inkubationen in diesen 14 Tagen.")
     else:
-        # Name des Balkens, z. B. "06.08. · offen" oder "06.08. · gespritzt"
-        laufend["name"] = laufend["start"].dt.strftime("%d.%m.") + " · " + laufend["status"]
-        # Farbe: offen = weinrot, gespritzt = grün, Infektion erst in der Prognose = hell
+        # Name des Balkens, z. B. "06.08. · offen" oder "20.07. · gespritzt (Prognose)"
+        laufend["name"] = (laufend["start"].dt.strftime("%d.%m.") + " · " + laufend["status"]
+                           + laufend["quelle"].map({"gemessen": "", "Prognose": " (Prognose)"}))
+        # Farbe: gemessen offen = weinrot, gemessen gespritzt = grün,
+        # geschätzt (Prognose) = dieselben Farben, aber heller
         laufend["art"] = laufend["status"]
-        laufend.loc[(laufend["start"] > tage[0]) & (laufend["status"] == "offen"), "art"] = "Prognose"
+        prognose_zeile = laufend["quelle"] == "Prognose"
+        laufend.loc[prognose_zeile & (laufend["status"] == "offen"), "art"] = "offen (Prognose)"
+        laufend.loc[prognose_zeile & (laufend["status"] == "gespritzt"), "art"] = "gespritzt (Prognose)"
         laufend["frist_text"] = "spritzen bis " + laufend["frist"].dt.strftime("%d.%m.")
 
         achse = alt.X("start:T", title=None, scale=alt.Scale(domain=[tage[0], tage[-1] + pd.Timedelta(days=1)]),
                       axis=alt.Axis(format="%d.%m.", tickCount=14, grid=True))
         zeile = alt.Y("name:N", title=None, sort=alt.SortField("start"))  # nach Datum sortiert
-        farben = alt.Scale(domain=["offen", "gespritzt", "Prognose"], range=[WEINROT, "#6AA84F", "#D9A5B3"])
+        farben = alt.Scale(domain=["offen", "gespritzt", "offen (Prognose)", "gespritzt (Prognose)"],
+                           range=[WEINROT, "#6AA84F", "#D9A5B3", "#C5E0B4"])
         # Was beim Darüberfahren mit der Maus erscheint (ohne «art», mit schönen Titeln)
         info_balken = [alt.Tooltip("start:T", title="Start", format="%d.%m."),
                        alt.Tooltip("name:N", title="Name"),
