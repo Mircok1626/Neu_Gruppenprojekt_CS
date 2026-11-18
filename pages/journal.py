@@ -53,8 +53,9 @@ st.subheader("Spritzung erfassen")
 with st.form("neue_spritzung", border=True):
     links, rechts = st.columns(2)   # Formular in zwei Spalten
 
-    # Datum: der Spritztag aus der Dosierung, sonst heute
-    datum = links.date_input("Datum", value=vorschlag.get("datum", datetime.date.today()), format="DD.MM.YYYY")
+    # Startwert: der Spritztag aus der Dosierung, sonst das Datum aus der Seitenleiste
+    heute = st.session_state.get("heute", datetime.date.today())
+    datum = links.date_input("Datum", value=vorschlag.get("datum", heute), format="DD.MM.YYYY")
 
     # Parzelle: Liste der gespeicherten Parzellen. Die Parzelle aus der
     # Dosierung ist vorausgewählt, falls es sie gibt.
