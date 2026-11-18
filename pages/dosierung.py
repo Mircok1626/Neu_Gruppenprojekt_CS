@@ -10,7 +10,6 @@ für den Rebbau 2026, Mittel gegen Falschen Mehltau.
 import datetime
 import math
 import sqlite3
-import altair as alt
 import pandas as pd
 import streamlit as st
 
@@ -76,8 +75,10 @@ with links:
                                     min_value=50, value=300, step=25)
     tank = st.number_input("Tankgrösse (l)", min_value=20, value=200, step=10)
 
-    # Spritztag: wird ins Journal übernommen
-    spritztag = st.date_input("Geplanter Spritztag", value=datetime.date.today(), format="DD.MM.YYYY")
+    # Spritztag: wird ins Journal übernommen.
+    # Startwert ist das Datum links in der Seitenleiste («Heute ist der»), das für alle Seiten gilt.
+    spritztag = st.date_input("Geplanter Spritztag", value=st.session_state.get("heute", datetime.date.today()),
+                              format="DD.MM.YYYY")
 
 
 # Die Basisbrühmenge zum gewählten Stadium holen
@@ -170,26 +171,10 @@ for name in STADIEN:
     stadien_namen.append(name)
     mengen.append(KONZENTRATION / 100 * STADIEN[name])
 
-# Aus den zwei Listen eine Tabelle machen (Altair braucht eine Tabelle)
-tabelle = pd.DataFrame({"Stadium": stadien_namen, "Menge": mengen})
-
-# Säulen: x = Stadium, y = Menge. Die y-Achse geht fest von 0 bis etwas über
-# die grösste Menge (× 1.2), damit nichts ins Minus geht und oben Platz für die Zahlen bleibt.
-balken = alt.Chart(tabelle).mark_bar(color="#7B1E3A", cornerRadiusTopLeft=6, cornerRadiusTopRight=6).encode(
-    x=alt.X("Stadium:N", sort=None, title=None, axis=alt.Axis(labelAngle=0)),   # Namen waagrecht
-    y=alt.Y("Menge:Q", title=f"{EINHEIT} pro ha", scale=alt.Scale(domain=[0, max(mengen) * 1.2])),
-    tooltip=[alt.Tooltip("Stadium:N"), alt.Tooltip("Menge:Q", title=f"{EINHEIT} pro ha", format=".2f")],
-)
-
-# Die Zahl direkt über jede Säule schreiben (z. B. «1.50»)
-zahlen = alt.Chart(tabelle).mark_text(dy=-10, fontWeight="bold", color="#7B1E3A").encode(
-    x=alt.X("Stadium:N", sort=None),
-    y="Menge:Q",
-    text=alt.Text("Menge:Q", format=".2f"),
-)
-
-# Säulen und Zahlen übereinanderlegen und anzeigen
-st.altair_chart((balken + zahlen).properties(height=320), width="stretch")
+# Das Diagramm bekommt die Mengen als Säulen und die Namen als x-Achse.
+st.bar_chart({"Stadium": stadien_namen, "Menge": mengen},
+             x="Stadium", y="Menge", y_label=f"{EINHEIT} pro ha",
+             color="#7B1E3A", sort=False)
 
 st.divider()
 st.caption("Quelle: Agroscope, Pflanzenschutzmittelliste für den Rebbau 2026. "

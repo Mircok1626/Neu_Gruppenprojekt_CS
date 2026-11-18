@@ -1,4 +1,6 @@
 #Hauptdokument, d.h. hier wird alles zusammengefügt, so dass streamlit ein App erstellen kann
+import datetime as dt
+
 import streamlit as st
 
 st.set_page_config(page_title="Spritzplaner", page_icon="🍇", layout="wide")
@@ -13,4 +15,14 @@ seiten = [
     st.Page("pages/wetter.py", title="Wetter", icon=":material/cloud:"),
 ]
 
-st.navigation(seiten).run()
+# Navigation zuerst, damit das Menü oben in der Seitenleiste steht
+navigation = st.navigation(seiten)
+
+# Datum links in der Seitenleiste. Es gilt für alle Seiten (key="heute").
+# Die Seiten lesen es mit gemeinsam.heute() bzw. st.session_state["heute"].
+# Ein früheres Datum zeigt, was die App damals angezeigt hätte (Demo).
+st.sidebar.date_input("Heute ist der", value=dt.date.today(), min_value=dt.date(2024, 1, 1),
+                      max_value=dt.date.today(), format="DD.MM.YYYY", key="heute")
+st.sidebar.caption("Gilt für alle Seiten. Ein früheres Datum zeigt, was die App damals angezeigt hätte.")
+
+navigation.run()
