@@ -2,7 +2,7 @@
 """Kalender: Wann kann ich spritzen?
 
 Die Seite erkennt Infektionen mit einem eigenen Machine-Learning-Modell:
-Das Modell hat aus den Agrometeo-Daten 2024 und 2025 gelernt, bei welchem
+Das Modell hat aus den Agrometeo-Daten 2019 bis 2025 gelernt, bei welchem
 Wetter es eine Infektion gibt. Danach schaut es sich das Wetter von Open-Meteo
 an (die letzten 14 Tage und die Prognose) und sagt, an welchen Tagen es eine
 Infektion gibt. Zusammen mit dem stündlichen Wetter zeigt die Seite für
@@ -41,10 +41,15 @@ GRAU = "#EEEEEE"
 # Agrometeo-Daten (Vergangenheit) als auch bei Open-Meteo (Prognose).
 MERKMALE = ["temp_min", "temp_mittel", "temp_max", "niederschlag_mm", "regen_vortag", "tag_im_jahr"]
 
-# Das Modell besteht aus 300 Bäumen, die abstimmen. Sagen mindestens 30 % davon
+# Jahre zum Lernen und Jahr zum Testen (das Testjahr sieht das Modell beim Lernen nie)
+LERNJAHRE = [2019, 2020, 2021, 2022, 2023, 2024, 2025]
+TESTJAHR = 2026
+
+# Das Modell besteht aus 300 Bäumen, die abstimmen. Sagen mindestens 25 % davon
 # «Infektion», gilt der Tag als Infektion. Bewusst vorsichtig (nicht erst ab 50 %):
 # Eine verpasste Infektion kostet Ernte, ein Fehlalarm nur einen Kontrollgang.
-WARNSCHWELLE = 0.3
+# Gewählt mit 2025: Modell aus 2019 bis 2024 gelernt, ab 25 % erkennt es 95 % der Infektionen.
+WARNSCHWELLE = 0.25
 
 # Spritzsaison gegen Falschen Mehltau: ab Austrieb bis zum Weichwerden der Trauben.
 # Ausserhalb der Saison wird nicht gespritzt, also warnt der Kalender auch nicht.
@@ -96,11 +101,12 @@ def lade_agrometeo(jahr):
 
 @st.cache_resource   # das Modell nur einmal trainieren, nicht bei jedem Klick
 def trainiere_modell():
-    """Trainiert das Modell mit 2024 und 2025 und prüft es mit 2026.
+    """Trainiert das Modell mit den Lernjahren und prüft es mit dem Testjahr.
 
     Rückgabe: das Modell, die Inkubationsdauer pro Monat und die Ergebnisse des Tests.
     """
-    lernen = pd.concat([lade_agrometeo(2024), lade_agrometeo(2025)])
+    # Alle Lernjahre untereinander in eine grosse Tabelle
+    lernen = pd.concat([lade_agrometeo(jahr) for jahr in LERNJAHRE])
 
     # Random Forest: 300 Entscheidungsbäume, die gemeinsam abstimmen.
     # class_weight="balanced": Infektionstage sind seltener, zählen darum stärker.
@@ -112,8 +118,8 @@ def trainiere_modell():
     infektionen = lernen[(lernen["infektion"] == 1) & lernen["dauer"].notna()]
     dauer_pro_monat = infektionen.groupby(infektionen["datum"].dt.month)["dauer"].mean().round().to_dict()
 
-    # Test mit 2026: Tage, die das Modell beim Lernen nie gesehen hat
-    test = lade_agrometeo(2026)
+    # Test mit dem Testjahr: Tage, die das Modell beim Lernen nie gesehen hat
+    test = lade_agrometeo(TESTJAHR)
     test = test[in_saison(test["datum"])]   # gezählt werden nur Tage in der Spritzsaison
     vorhersage = (modell.predict_proba(test[MERKMALE])[:, 1] >= WARNSCHWELLE).astype(int)
     echt = test["infektion"]
@@ -452,13 +458,13 @@ with bereich_inkubation:
 with st.expander("Wie erkennt der Kalender Infektionen? (Machine Learning)"):
     st.markdown(
         "Ein **Random Forest** (300 Entscheidungsbäume) hat aus den Agrometeo-Daten "
-        "**2024 und 2025** gelernt, bei welchem Wetter es eine Infektion gibt: "
+        "**2019 bis 2025** (7 Jahre) gelernt, bei welchem Wetter es eine Infektion gibt: "
         "Temperatur (min, Mittel, max), Regen am Tag und am Vortag sowie die Jahreszeit. "
         "Jetzt schaut er sich das Wetter von Open-Meteo an und sagt für jeden Tag, "
         "ob es eine Infektion gibt: ja oder nein. Gewarnt wird nur in der Spritzsaison "
         "(April bis August)."
     )
-    st.markdown("**Test mit der Saison 2026** (Tage, die das Modell beim Lernen nie gesehen hat):")
+    st.markdown(f"**Test mit der Saison {TESTJAHR}** (Tage, die das Modell beim Lernen nie gesehen hat):")
     k1, k2, k3 = st.columns(3)
     k1.metric("Infektionen erkannt", f"{ergebnis['erkannt']} von {ergebnis['total']}")
     k2.metric("Verpasst", ergebnis["verpasst"])
