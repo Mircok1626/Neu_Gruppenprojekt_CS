@@ -3,9 +3,10 @@
 
 Die Seite erkennt Infektionen mit einem eigenen Machine-Learning-Modell:
 Das Modell hat aus den Agrometeo-Daten 2019 bis 2025 gelernt, bei welchem
-Wetter es eine Infektion gibt. Danach schaut es sich das Wetter von Open-Meteo
-an (die letzten 14 Tage und die Prognose) und sagt, an welchen Tagen es eine
-Infektion gibt. Zusammen mit dem stündlichen Wetter zeigt die Seite für
+Wetter es eine Infektion gibt. Für vergangene Tage nimmt die Seite die
+gemessenen Infektionen von Agrometeo (mit der echten Inkubationsdauer).
+Für die Prognose-Tage schaut das Modell sich das Wetter von Open-Meteo an
+und sagt, an welchen Tagen es eine Infektion gibt. Zusammen mit dem stündlichen Wetter zeigt die Seite für
 14 Tage eine Ampel, wann man spritzen kann.
 
 KI-Hinweis: Dieser Code wurde mit Claude (Anthropic, Claude Opus 5.5) am
@@ -147,6 +148,27 @@ def erkenne_infektionen(tageswetter, modell, dauer_pro_monat):
     dauer = df["datum"].dt.month.map(dauer_pro_monat).fillna(10)
     df["ende"] = df["start"] + pd.to_timedelta(dauer, unit="D")
     # Formel 3: spritzen bis = Infektionsdatum + 80 % der Inkubationsdauer
+    df["frist"] = (df["start"] + (df["ende"] - df["start"]) * 0.8).dt.floor("D")
+    return df
+
+
+def infektionen_von_agrometeo(von, bis):
+    """Holt die gemessenen Infektionen mit dem echten Inkubationsende von Agrometeo.
+
+    von, bis: Zeitraum, in dem wir Infektionen suchen
+    Gibt eine Tabelle mit start, ende und frist zurück (wie erkenne_infektionen).
+    """
+    try:
+        df = lade_agrometeo(von.year)   # nur gemessene Tage (siehe lade_agrometeo)
+    except FileNotFoundError:
+        # Für dieses Jahr gibt es noch keine Agrometeo-Datei: dann keine gemessenen Infektionen
+        return pd.DataFrame(columns=["start", "ende", "frist"])
+    df = df[(df["infektion"] == 1) & df["dauer"].notna()]   # nur Tage mit Infektion
+    df = df[(df["datum"] >= pd.Timestamp(von)) & (df["datum"] <= pd.Timestamp(bis))].copy()
+    df["start"] = df["datum"]
+    # Echte Dauer von Agrometeo statt Monats-Durchschnitt
+    df["ende"] = df["start"] + pd.to_timedelta(df["dauer"], unit="D")
+    # Formel 3: spritzen bis = Infektion + 80 % der Inkubationsdauer
     df["frist"] = (df["start"] + (df["ende"] - df["start"]) * 0.8).dt.floor("D")
     return df
 
@@ -300,8 +322,12 @@ except Exception:
     st.error("Das Wetter von Open-Meteo konnte nicht geladen werden.")
     st.stop()
 
-# Das Modell sagt, an welchen Tagen es eine Infektion gibt
-infektionen = erkenne_infektionen(tageswetter, modell, dauer_pro_monat)
+# Vergangenheit bis heute: echte Infektionen von Agrometeo
+gemessen = infektionen_von_agrometeo(heute - dt.timedelta(days=14), heute)
+# Zukunft (Prognose): hier hilft das Modell, weil Agrometeo diese Tage noch nicht kennt
+zukunft = tageswetter[tageswetter["datum"] > pd.Timestamp(heute)]
+prognose = erkenne_infektionen(zukunft, modell, dauer_pro_monat)
+infektionen = pd.concat([gemessen, prognose], ignore_index=True)
 
 # Spritzungen aus dem Journal holen (nur bis «heute», wichtig für den Demo-Modus)
 spritzungen = lade_spritzungen()
@@ -468,7 +494,8 @@ with st.expander("Wie erkennt der Kalender Infektionen? (Machine Learning)"):
         "Ein **Random Forest** (300 Entscheidungsbäume) hat aus den Agrometeo-Daten "
         "**2019 bis 2025** (7 Jahre) gelernt, bei welchem Wetter es eine Infektion gibt: "
         "Temperatur (min, Mittel, max), Regen am Tag und am Vortag sowie die Jahreszeit. "
-        "Jetzt schaut er sich das Wetter von Open-Meteo an und sagt für jeden Tag, "
+        "Für vergangene Tage nimmt der Kalender die gemessenen Infektionen von Agrometeo. "
+        "Für die Prognose-Tage schaut das Modell sich das Wetter von Open-Meteo an und sagt, "
         "ob es eine Infektion gibt: ja oder nein. Gewarnt wird nur in der Spritzsaison "
         "(April bis August)."
     )
