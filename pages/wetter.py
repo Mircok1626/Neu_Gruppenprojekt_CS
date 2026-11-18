@@ -1,6 +1,6 @@
 """Seite Wetter: Warum warnt die App?
 
-Zeigt Temperatur, Regen, Gradstunden bei Blattnässe und die Temperatursumme.
+Zeigt Temperatur, Regen, Gradstunden bei Blattnässe und ob die Sporen keimbereit sind.
 Bis «heute» (Datum links in der Seitenleiste) kommen die Werte gemessen von Agrometeo,
 seit dem 1.1. und mit echter Blattnässe. Danach folgt die Prognose von Open-Meteo,
 dort sagt das Modell (gemeinsam.py) die Infektionen voraus.
@@ -134,39 +134,19 @@ def zeige_gradstunden_diagramm(df, heute):
                    "schon genug Blätter hat, die der Pilz befallen kann (z. B. Ende April oft erst 2 kleine Blätter).")
 
 
-def zeige_temperatursumme_diagramm(df, heute, keimbereit):
-    """Diagramm 3: Temperatursumme seit 1.1. mit 140-Linie. Ab 140 beginnt die Spritzsaison."""
-    with st.container(border=True):
-        st.subheader("Temperatursumme seit 1.1. – wann beginnt die Spritzsaison?")
-        st.caption(f"Jeder Tag zählt mit, so viel er über 8 °C warm ist. Ab {g.KEIMBEREIT_AB} sind die "
-                   "Wintersporen keimbereit. Ab dann warnt der Kalender vor Infektionen.")
+def zeige_keimbereitschaft(df, heute, keimbereit):
+    """Infobanner: Ist die Temperatursumme von 140 erreicht (Sporen keimbereit, Spritzsaison beginnt)?"""
+    # Temperatursumme am heutigen Tag (seit 1.1., nur der Teil über 8 °C)
+    bis_heute = df[df["datum"] <= heute]
+    summe = bis_heute["temperatursumme"].iloc[-1] if len(bis_heute) > 0 else 0
 
-        achse = alt.X("datum:T", title=None, axis=alt.Axis(format="%d.%m."))
-        kurve = alt.Chart(df).mark_line(color=WEINROT, strokeWidth=2.5).encode(
-            x=achse, y=alt.Y("temperatursumme:Q", title="Temperatursumme (°C)"),
-            tooltip=[alt.Tooltip("datum:T", title="Datum", format="%d.%m.%Y"),
-                     alt.Tooltip("temperatursumme:Q", title="Temperatursumme", format=".0f")])
-        linie = alt.Chart(pd.DataFrame({"y": [g.KEIMBEREIT_AB], "text": [f"{g.KEIMBEREIT_AB} = keimbereit"]}))
-        linie_140 = linie.mark_rule(color="#2E6B3E", strokeDash=[5, 5], strokeWidth=2).encode(y="y:Q")
-        text_140 = linie.mark_text(align="left", dx=4, dy=-8, color="#2E6B3E").encode(
-            x=alt.value(0), y="y:Q", text="text:N")
-        ebenen = [prognose_flaeche(df, heute), kurve, linie_140, text_140, heute_linie(heute)]
-
-        # Punkt am Tag der Keimbereitschaft mit dem Datum
-        if keimbereit is not None:
-            punkt_daten = pd.DataFrame({"datum": [keimbereit], "y": [g.KEIMBEREIT_AB],
-                                        "text": [keimbereit.strftime("%d.%m.")]})
-            punkt = alt.Chart(punkt_daten).mark_circle(color="#2E6B3E", size=110, opacity=1).encode(
-                x="datum:T", y="y:Q")
-            punkt_text = alt.Chart(punkt_daten).mark_text(dy=14, color="#2E6B3E", fontWeight="bold").encode(
-                x="datum:T", y="y:Q", text="text:N")
-            ebenen += [punkt, punkt_text]
-
-        st.altair_chart(alt.layer(*ebenen).properties(height=250), width="stretch")
-        if keimbereit is None:
-            st.caption("Die Sporen sind noch nicht keimbereit. Die Spritzsaison hat noch nicht begonnen.")
-        else:
-            st.caption(f"Keimbereit seit {keimbereit:%d.%m.%Y}: Ab diesem Tag beginnt im Kalender die Spritzsaison.")
+    if keimbereit is not None and keimbereit <= heute:
+        st.success(f"Die Temperatursumme von {g.KEIMBEREIT_AB} wurde am {keimbereit:%d.%m.%Y} erreicht: "
+                   "Die Sporen sind keimbereit, die Spritzsaison hat begonnen.",
+                   icon=":material/check_circle:")
+    else:
+        st.info(f"Die Sporen sind noch nicht keimbereit: Temperatursumme {summe:.0f} von {g.KEIMBEREIT_AB}. "
+                "Erst danach beginnt die Spritzsaison.", icon=":material/info:")
 
 
 def hauptseite():
@@ -176,7 +156,7 @@ def hauptseite():
 
     zeitraum = st.radio(
         "Zeitraum",
-        ["Seit 1.1.", "3 Wochen + Prognose", "14 Tage voraus"],
+        ["Seit 1.1.", "3 Wochen + Prognose"],
         index=1,
         horizontal=True,
         label_visibility="collapsed"
@@ -196,14 +176,12 @@ def hauptseite():
 
     if zeitraum == "3 Wochen + Prognose":
         df_anzeige = df_gesamt[df_gesamt["datum"] >= heute - pd.Timedelta(days=21)]
-    elif zeitraum == "14 Tage voraus":
-        df_anzeige = df_gesamt[df_gesamt["datum"] >= heute]
     else:
         df_anzeige = df_gesamt
 
     zeige_kombi_diagramm(df_anzeige, heute)
     zeige_gradstunden_diagramm(df_anzeige, heute)
-    zeige_temperatursumme_diagramm(df_gesamt, heute, keimbereit)   # immer ab 1.1.
+    zeige_keimbereitschaft(df_gesamt, heute, keimbereit)
 
     with st.expander("Rohdaten & Berechnungen anzeigen"):
         spalten = ["datum", "quelle", "temp_mittel", "niederschlag_mm", "blattnaesse_std",
