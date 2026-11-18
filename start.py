@@ -62,7 +62,7 @@ def zeige_kacheln():
         {"titel": "Dosierung", "text": "Mittel und Mengen berechnen", "icon": "science", "seite": "pages/dosierung.py"},
         {"titel": "Journal", "text": "Behandlungen festhalten", "icon": "description", "seite": "pages/journal.py"},
         {"titel": "Kalender", "text": "Spritztermine planen", "icon": "calendar_month", "seite": "pages/kalender.py"},
-        {"titel": "Parzelle", "text": "Flächen verwalten", "icon": "map", "seite": "pages/parzelle.py"},
+        {"titel": "Parzellen", "text": "Flächen verwalten", "icon": "map", "seite": "pages/parzellen.py"},
         {"titel": "Wetter", "text": "Bedingungen vor dem Spritzen prüfen", "icon": "cloud", "seite": "pages/wetter.py"},
     ]
 
