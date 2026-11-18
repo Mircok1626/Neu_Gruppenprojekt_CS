@@ -58,6 +58,16 @@ def heute_linie(heute):
         color="#333333", strokeDash=[4, 4]).encode(x="heute:T")
 
 
+def zoom_waagrecht():
+    """Erlaubt Reinzoomen (Mausrad) und Verschieben (ziehen), aber nur entlang der Zeitachse.
+
+    encodings=["x"]: Nur die Datumsachse bewegt sich. Die Achsen für Temperatur, Regen
+    und Gradstunden bleiben fest, darum kann nichts ins Minus rutschen.
+    Doppelklick ins Diagramm setzt den Zoom wieder zurück.
+    """
+    return alt.selection_interval(bind="scales", encodings=["x"])
+
+
 def zeige_kombi_diagramm(df, heute):
     """Diagramm 1: Temperatur (Linie), Regen (Balken) und Infektionen (Punkte)."""
     with st.container(border=True):
@@ -80,7 +90,8 @@ def zeige_kombi_diagramm(df, heute):
         regen = basis.mark_bar(color=BLAU, opacity=0.8).encode(
             y=alt.Y("niederschlag_mm:Q", title="Regen (mm)", axis=alt.Axis(orient="right")), tooltip=info)
         temperatur = basis.mark_line(color=WEINROT, strokeWidth=2.5).encode(
-            y=alt.Y("temp_mittel:Q", title="Temperatur (°C)", axis=alt.Axis(orient="left")), tooltip=info)
+            y=alt.Y("temp_mittel:Q", title="Temperatur (°C)", axis=alt.Axis(orient="left")), tooltip=info
+        ).add_params(zoom_waagrecht())   # Zoom gilt für alle Teile, weil sie dieselbe Datumsachse teilen
 
         # Punkte oben im Diagramm: Infektion (weinrot) oder Infektionswetter vor der Keimbereitschaft (grau)
         punkte_daten = df[df["infektion"] | df["vor_keimbereit"]].copy()
@@ -96,7 +107,8 @@ def zeige_kombi_diagramm(df, heute):
                              ).resolve_scale(y="independent").properties(height=280)
         st.altair_chart(diagramm, width="stretch")
         st.caption("Bis heute gemessen von Agrometeo, danach Prognose von Open-Meteo. "
-                   "Infektionen in der Prognose sagt das Modell voraus (wie im Kalender).")
+                   "Infektionen in der Prognose sagt das Modell voraus (wie im Kalender). "
+                   "Zoomen: Mausrad im Diagramm, verschieben: ziehen, zurücksetzen: Doppelklick.")
 
 
 def zeige_gradstunden_diagramm(df, heute):
@@ -128,7 +140,7 @@ def zeige_gradstunden_diagramm(df, heute):
                      alt.Tooltip("ergebnis:N", title="Ergebnis")])
         grenze = alt.Chart(pd.DataFrame({"y": [g.GRADSTUNDEN_INFEKTION]})).mark_rule(
             color=WEINROT, strokeDash=[4, 4]).encode(y="y:Q")
-        diagramm = alt.layer(balken, grenze, heute_linie(heute)).properties(height=250)
+        diagramm = alt.layer(balken.add_params(zoom_waagrecht()), grenze, heute_linie(heute)).properties(height=250)
         st.altair_chart(diagramm, width="stretch")
         st.caption("Nicht jeder Tag über der Grenze ist eine Infektion: Agrometeo prüft zusätzlich, ob die Rebe "
                    "schon genug Blätter hat, die der Pilz befallen kann (z. B. Ende April oft erst 2 kleine Blätter).")
