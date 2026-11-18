@@ -436,18 +436,26 @@ with bereich_inkubation:
                       axis=alt.Axis(format="%d.%m.", tickCount=14, grid=True))
         zeile = alt.Y("name:N", title=None, sort=alt.SortField("start"))  # nach Datum sortiert
         farben = alt.Scale(domain=["offen", "gespritzt", "Prognose"], range=[WEINROT, "#6AA84F", "#D9A5B3"])
+        # Was beim Darüberfahren mit der Maus erscheint (ohne «art», mit schönen Titeln)
+        info_balken = [alt.Tooltip("start:T", title="Start", format="%d.%m."),
+                       alt.Tooltip("name:N", title="Name"),
+                       alt.Tooltip("ende:T", title="Ende", format="%d.%m.")]
+        info_frist = [alt.Tooltip("name:N", title="Name"),
+                      alt.Tooltip("frist:T", title="Spritzen bis", format="%d.%m.")]
 
         # Balken vom Infektionstag bis zum Ende der Inkubation
         balken = alt.Chart(laufend).mark_bar(height=18, cornerRadius=4, clip=True).encode(
             x=achse, x2="ende:T", y=zeile,
-            color=alt.Color("art:N", scale=farben, title=None, legend=alt.Legend(orient="bottom")))
+            color=alt.Color("art:N", scale=farben, title=None, legend=alt.Legend(orient="bottom")),
+            tooltip=info_balken)
         # Goldener Strich bei der Frist, Beschriftung rechts daneben
         striche = alt.Chart(laufend).mark_tick(color=GOLD, thickness=3, size=24, clip=True).encode(
-            x="frist:T", y=zeile)
+            x="frist:T", y=zeile, tooltip=info_frist)
         # Auf dem dunkelroten Balken weisse Schrift, sonst dunkle Schrift (besser lesbar)
         texte = alt.Chart(laufend).mark_text(align="left", dx=6, fontWeight="bold", clip=True).encode(
             x="frist:T", y=zeile, text="frist_text:N",
-            color=alt.condition(alt.datum.art == "offen", alt.value("white"), alt.value("#5C4A12")))
+            color=alt.condition(alt.datum.art == "offen", alt.value("white"), alt.value("#5C4A12")),
+            tooltip=info_frist)
 
         diagramm = (balken + striche + texte).properties(height=40 * len(laufend) + 20)
         st.altair_chart(diagramm, width="stretch")
