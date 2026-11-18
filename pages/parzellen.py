@@ -30,6 +30,11 @@ con.execute("""
 # Alle Parzellen aus der Datenbank holen
 parzellen = pd.read_sql_query("SELECT * FROM parzellen", con)
 
+# Meldung nach dem Speichern: Sie wird gemerkt, weil die Seite danach neu lädt.
+# st.toast blendet die Meldung für ein paar Sekunden unten rechts ein.
+if st.session_state.pop("parzellen_gespeichert", False):
+    st.toast("Änderungen gespeichert.", icon=":material/check_circle:")
+
 # Drei Kennzahlen nebeneinander, jede in einem Kasten mit Rahmen
 spalte1, spalte2, spalte3 = st.columns(3)
 with spalte1.container(border=True):
@@ -39,22 +44,45 @@ with spalte2.container(border=True):
 with spalte3.container(border=True):
     st.metric("Wetterstationen", parzellen["station"].nunique())
 
-# Parzellen als Tabelle anzeigen
+# Parzellen als Tabelle anzeigen, die man direkt bearbeiten kann
 st.subheader("Übersicht")
 
 if parzellen.empty:
     st.info("Es gibt noch keine Parzellen. Lege unten deine erste an.")
 else:
-    st.dataframe(
-        parzellen[["name", "sorte", "flaeche_ha", "station"]],   # nur diese Spalten zeigen
+    st.caption("Zum Ändern in ein Feld klicken, den neuen Wert eingeben und danach «Änderungen speichern».")
+    # st.data_editor zeigt eine Tabelle, in der man die Felder ändern kann.
+    # Die Spalte «id» braucht es zum Speichern, sie wird aber nicht angezeigt (None).
+    bearbeitet = st.data_editor(
+        parzellen[["id", "name", "sorte", "flaeche_ha", "station"]],
         hide_index=True,                                         # Zeilennummern 0, 1, 2 ausblenden
         column_config={                                          # schönere Spaltentitel
+            "id": None,
             "name": "Name",
             "sorte": "Sorte",
-            "flaeche_ha": st.column_config.NumberColumn("Fläche (ha)", format="%.2f"),
-            "station": "Wetterstation",
+            "flaeche_ha": st.column_config.NumberColumn("Fläche (ha)", format="%.2f", min_value=0.01, step=0.01),
+            "station": st.column_config.SelectboxColumn("Wetterstation", options=list(STATIONEN.keys())),
         },
+        key="parzellen_tabelle",
     )
+
+    if st.button("Änderungen speichern"):
+        # Prüfen: Jede Parzelle braucht einen Namen und eine Fläche
+        namen_fehlen = bearbeitet["name"].fillna("").str.strip().eq("").any()
+        flaeche_fehlt = bearbeitet["flaeche_ha"].isna().any() or (bearbeitet["flaeche_ha"] <= 0).any()
+        if namen_fehlen or flaeche_fehlt:
+            st.error("Jede Parzelle braucht einen Namen und eine Fläche.")
+        else:
+            # Jede Zeile in der Datenbank mit den Werten aus der Tabelle überschreiben
+            for _, zeile in bearbeitet.iterrows():
+                con.execute(
+                    "UPDATE parzellen SET name = ?, sorte = ?, flaeche_ha = ?, station = ? WHERE id = ?",
+                    (zeile["name"], zeile["sorte"], float(zeile["flaeche_ha"]), zeile["station"], int(zeile["id"])),
+                )
+            con.commit()    #wirklich speichern
+            st.session_state["parzellen_gespeichert"] = True
+            del st.session_state["parzellen_tabelle"]   # Tabelle zurücksetzen, damit keine alten Änderungen bleiben
+            st.rerun()      #Seite neu laden, damit auch die Kennzahlen oben stimmen
 
 # Formular für eine neue Parzelle
 st.subheader("Neue Parzelle")
@@ -68,7 +96,7 @@ with st.form("neue_parzelle", border=True):
     gespeichert = st.form_submit_button("Parzelle speichern", type="primary")
 
 
-# Nur wenn auf den Button geklickt wurde 
+# Nur wenn auf den Button geklickt wurde
 if gespeichert:
     if name == "" or flaeche == 0:
         st.error("Bitte Name und Fläche eingeben.")
