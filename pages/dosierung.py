@@ -10,6 +10,7 @@ für den Rebbau 2026, Mittel gegen Falschen Mehltau.
 import datetime
 import math
 import sqlite3
+import altair as alt
 import pandas as pd
 import streamlit as st
 
@@ -29,6 +30,45 @@ STADIEN = {
 MITTEL = "Folpet 80 WG"
 KONZENTRATION = 0.125   # Konzentration in Prozent
 EINHEIT = "kg"          # Folpet 80 WG ist ein Granulat und wird abgewogen
+
+
+def stadium_vorschlag(blattzahl):
+    """Schlägt anhand der Blattzahl ein Rebstadium vor.
+
+    Gibt die Position in STADIEN zurück (0 = «3–5 Blätter», 3 = «Blüte» usw.).
+    PLATZHALTER: Die Grenzen sind geschätzt und müssen mit dem Winzer bestätigt werden.
+    """
+    if blattzahl < 6:
+        return 0   # 3–5 Blätter
+    elif blattzahl < 9:
+        return 1   # 1. Vorblüte
+    elif blattzahl < 12:
+        return 2   # 2. Vorblüte
+    elif blattzahl < 18:
+        return 3   # Blüte
+    else:
+        return 4   # Nachblüte
+
+
+def blattzahl_am(tag):
+    """Liest die Blattzahl von Agrometeo für einen Tag aus daten/zizers_JAHR.csv.
+
+    Gibt None zurück, wenn es für diesen Tag keine Daten gibt.
+    """
+    try:
+        df = pd.read_csv(f"daten/zizers_{tag.year}.csv", parse_dates=["datum"])
+    except FileNotFoundError:
+        return None   # für dieses Jahr gibt es keine Agrometeo-Datei
+
+    # Die Spalte mit der Blattzahl suchen (egal ob sie «blattzahl», «Blattzahl» o. ä. heisst)
+    spalten = [name for name in df.columns if "blattzahl" in name.lower()]
+    if len(spalten) == 0:
+        return None   # keine solche Spalte in der Datei
+
+    zeile = df[df["datum"].dt.date == tag]
+    if zeile.empty or pd.isna(zeile[spalten[0]].iloc[0]):
+        return None   # Tag nicht in der Tabelle oder keine Blattzahl
+    return float(zeile[spalten[0]].iloc[0])
 
 # Titel und Untertitel
 st.title("Dosierung – wie viel Mittel und Wasser brauche ich?")
@@ -67,18 +107,28 @@ with links:
         zeile = parzellen[parzellen["name"] == parzelle].iloc[0]
         flaeche = float(zeile["flaeche_ha"])
 
-    # Auswahlfeld: index=3 heisst: «Blüte» (4. Eintrag) ist vorausgewählt.
-    stadium = st.selectbox("Rebstadium", list(STADIEN.keys()), index=3)
+    # Spritztag: wird ins Journal übernommen und bestimmt den Vorschlag für das Rebstadium.
+    # Startwert ist das Datum links in der Seitenleiste («Heute ist der»), das für alle Seiten gilt.
+    spritztag = st.date_input("Geplanter Spritztag", value=st.session_state.get("heute", datetime.date.today()),
+                              format="DD.MM.YYYY")
+
+    # Vorschlag aus der Blattzahl von Agrometeo am geplanten Spritztag
+    blattzahl = blattzahl_am(spritztag)
+    if blattzahl is None:
+        vorschlag = 3   # keine Daten: «Blüte» vorauswählen wie bisher
+        hinweis = "Keine Agrometeo-Daten für diesen Tag. Bitte das Stadium selbst wählen."
+    else:
+        vorschlag = stadium_vorschlag(blattzahl)
+        hinweis = f"Vorschlag aus Agrometeo: etwa {blattzahl:.0f} Blätter. Bitte im Rebberg prüfen."
+
+    # Auswahlfeld: index=vorschlag wählt das vorgeschlagene Stadium vor, man kann es aber ändern
+    stadium = st.selectbox("Rebstadium", list(STADIEN.keys()), index=vorschlag)
+    st.caption(hinweis)
 
     # Zahlenfelder: min_value = kleinster Wert, value = Startwert
     wasser_pro_ha = st.number_input("Wie viele Liter versprüht dein Gerät pro Hektare?",
                                     min_value=50, value=300, step=25)
     tank = st.number_input("Tankgrösse (l)", min_value=20, value=200, step=10)
-
-    # Spritztag: wird ins Journal übernommen.
-    # Startwert ist das Datum links in der Seitenleiste («Heute ist der»), das für alle Seiten gilt.
-    spritztag = st.date_input("Geplanter Spritztag", value=st.session_state.get("heute", datetime.date.today()),
-                              format="DD.MM.YYYY")
 
 
 # Die Basisbrühmenge zum gewählten Stadium holen
@@ -171,10 +221,26 @@ for name in STADIEN:
     stadien_namen.append(name)
     mengen.append(KONZENTRATION / 100 * STADIEN[name])
 
-# Das Diagramm bekommt die Mengen als Säulen und die Namen als x-Achse.
-st.bar_chart({"Stadium": stadien_namen, "Menge": mengen},
-             x="Stadium", y="Menge", y_label=f"{EINHEIT} pro ha",
-             color="#7B1E3A", sort=False)
+# Aus den zwei Listen eine Tabelle machen (Altair braucht eine Tabelle)
+tabelle = pd.DataFrame({"Stadium": stadien_namen, "Menge": mengen})
+
+# Säulen: x = Stadium, y = Menge. Die y-Achse geht fest von 0 bis etwas über
+# die grösste Menge (× 1.2), damit nichts ins Minus geht und oben Platz für die Zahlen bleibt.
+balken = alt.Chart(tabelle).mark_bar(color="#7B1E3A", cornerRadiusTopLeft=6, cornerRadiusTopRight=6).encode(
+    x=alt.X("Stadium:N", sort=None, title=None, axis=alt.Axis(labelAngle=0)),   # Namen waagrecht
+    y=alt.Y("Menge:Q", title=f"{EINHEIT} pro ha", scale=alt.Scale(domain=[0, max(mengen) * 1.2])),
+    tooltip=[alt.Tooltip("Stadium:N"), alt.Tooltip("Menge:Q", title=f"{EINHEIT} pro ha", format=".2f")],
+)
+
+# Die Zahl direkt über jede Säule schreiben (z. B. «1.50»)
+zahlen = alt.Chart(tabelle).mark_text(dy=-10, fontWeight="bold", color="#7B1E3A").encode(
+    x=alt.X("Stadium:N", sort=None),
+    y="Menge:Q",
+    text=alt.Text("Menge:Q", format=".2f"),
+)
+
+# Säulen und Zahlen übereinanderlegen und anzeigen
+st.altair_chart((balken + zahlen).properties(height=320), width="stretch")
 
 st.divider()
 st.caption("Quelle: Agroscope, Pflanzenschutzmittelliste für den Rebbau 2026. "
