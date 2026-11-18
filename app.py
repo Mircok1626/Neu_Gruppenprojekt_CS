@@ -9,7 +9,7 @@ seiten = [
     st.Page("pages/dosierung.py", title="Dosierung", icon=":material/science:"),
     st.Page("pages/journal.py", title="Journal", icon=":material/description:"),
     st.Page("pages/kalender.py", title="Kalender", icon=":material/calendar_month:"),
-    st.Page("pages/parzelle.py", title="Parzelle", icon=":material/map:"),
+    st.Page("pages/parzellen.py", title="Parzellen", icon=":material/map:"),
     st.Page("pages/wetter.py", title="Wetter", icon=":material/cloud:"),
 ]
 
