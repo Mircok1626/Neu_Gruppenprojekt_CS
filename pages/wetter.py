@@ -18,27 +18,10 @@ GRAU_PUNKT = "#8A8A8A"
 PROGNOSE_FLAECHE = "#F1E8E0"
 
 
-def zeige_banner(jahr):
-    """Zeigt den weinroten Banner oben auf der Wetter-Seite."""
-    st.markdown(f"""
-    <div style="
-        background-color: #7B1E3A;
-        color: white;
-        padding: 32px 40px;
-        border-radius: 20px;
-        margin-bottom: 24px;
-    ">
-        <p style="margin: 0 0 6px 0; font-size: 14px; color: #F8E8EC; letter-spacing: 0.5px;">
-            Zizers Halde · Saison {jahr}
-        </p>
-        <h1 style="margin: 0; font-size: 36px; color: white;">
-            Wetter – warum warnt die App?
-        </h1>
-        <p style="margin: 8px 0 0 0; font-size: 18px; color: #F8E8EC;">
-            Temperatur, Niederschlag, Blattnässe und Infektionen auf einen Blick.
-        </p>
-    </div>
-    """, unsafe_allow_html=True)
+def zeige_titel(jahr):
+    """Zeigt Titel und Untertitel, gleich wie auf den anderen Seiten."""
+    st.title("Wetter – warum warnt die App?")
+    st.caption(f"Zizers Halde · Saison {jahr}: Temperatur, Niederschlag, Blattnässe und Infektionen auf einen Blick.")
 
 
 def legende(eintraege):
@@ -189,7 +172,7 @@ def zeige_temperatursumme_diagramm(df, heute, keimbereit):
 def hauptseite():
     """Baut die komplette Wetter-Seite auf."""
     heute = pd.Timestamp(g.heute())   # Datum aus der Seitenleiste
-    zeige_banner(heute.year)
+    zeige_titel(heute.year)
 
     zeitraum = st.radio(
         "Zeitraum",
