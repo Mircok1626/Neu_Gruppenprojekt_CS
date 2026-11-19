@@ -1,3 +1,4 @@
+
 # Hier wird die Seite Kalender codiert.
 """Kalender: Wann kann ich spritzen?
 
@@ -86,32 +87,13 @@ def pruefe_schutz(infektionen, spritzungen):
 # ---------------------------------------------------------------------------
 @st.cache_data
 def lade_wetter(von, bis):
-    """Lädt das stündliche Wetter von Open-Meteo."""
-
-    parameter = {
-        "latitude": g.ZIZERS_LAT,
-        "longitude": g.ZIZERS_LON,
-        "timezone": "Europe/Zurich",
-        "hourly": "precipitation,wind_speed_10m",
-        "start_date": str(von),
-        "end_date": str(bis)
-    }
-
-    antwort = requests.get(
-        g.open_meteo_url(bis),
-        params=parameter,
-        timeout=10
-    )
-
-    st.write("API-Status:", antwort.status_code)
-    st.write("API-Antwort:", antwort.json())
-
-    antwort.raise_for_status()
-
-    daten = antwort.json()["hourly"]
+    """Lädt das stündliche Wetter (Regen, Wind, Temperatur) für Zizers von Open-Meteo."""
+    parameter = {"latitude": g.ZIZERS_LAT, "longitude": g.ZIZERS_LON, "timezone": "Europe/Zurich",
+                 "hourly": "precipitation,wind_speed_10m",
+                 "start_date": str(von), "end_date": str(bis)}
+    daten = requests.get(g.open_meteo_url(bis), params=parameter, timeout=10).json()["hourly"]
     wetter = pd.DataFrame(daten)
     wetter["time"] = pd.to_datetime(wetter["time"])
-
     return wetter
 
 
@@ -180,8 +162,8 @@ modell, dauer_pro_monat, ergebnis = g.trainiere_modell()
 tage = pd.date_range(heute, periods=14)
 try:
     wetter = lade_wetter(heute, tage[-1].date())
-except Exception as e:
-    st.error(f"Fehler beim Laden: {type(e).__name__}: {e}")
+except Exception:
+    st.error("Das Wetter von Open-Meteo konnte nicht geladen werden.")
     st.stop()
 
 # Tageswerte vom 1.1. bis 14 Tage nach heute (aus gemeinsam.py):
