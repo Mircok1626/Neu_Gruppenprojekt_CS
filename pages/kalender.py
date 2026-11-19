@@ -86,13 +86,32 @@ def pruefe_schutz(infektionen, spritzungen):
 # ---------------------------------------------------------------------------
 @st.cache_data
 def lade_wetter(von, bis):
-    """Lädt das stündliche Wetter (Regen, Wind, Temperatur) für Zizers von Open-Meteo."""
-    parameter = {"latitude": g.ZIZERS_LAT, "longitude": g.ZIZERS_LON, "timezone": "Europe/Zurich",
-                 "hourly": "precipitation,wind_speed_10m",
-                 "start_date": str(von), "end_date": str(bis)}
-    daten = requests.get(g.open_meteo_url(bis), params=parameter, timeout=10).json()["hourly"]
+    """Lädt das stündliche Wetter von Open-Meteo."""
+
+    parameter = {
+        "latitude": g.ZIZERS_LAT,
+        "longitude": g.ZIZERS_LON,
+        "timezone": "Europe/Zurich",
+        "hourly": "precipitation,wind_speed_10m",
+        "start_date": str(von),
+        "end_date": str(bis)
+    }
+
+    antwort = requests.get(
+        g.open_meteo_url(bis),
+        params=parameter,
+        timeout=10
+    )
+
+    st.write("API-Status:", antwort.status_code)
+    st.write("API-Antwort:", antwort.json())
+
+    antwort.raise_for_status()
+
+    daten = antwort.json()["hourly"]
     wetter = pd.DataFrame(daten)
     wetter["time"] = pd.to_datetime(wetter["time"])
+
     return wetter
 
 
@@ -164,7 +183,7 @@ try:
 except Exception as e:
     st.error(f"Fehler beim Laden: {type(e).__name__}: {e}")
     st.stop()
-    
+
 # Tageswerte vom 1.1. bis 14 Tage nach heute (aus gemeinsam.py):
 # bis heute gemessen von Agrometeo, danach Prognose von Open-Meteo mit dem Modell
 tageswetter = g.wetter_seit_neujahr(heute)
