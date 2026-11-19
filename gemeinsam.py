@@ -187,7 +187,10 @@ def wetter_seit_neujahr(stichtag):
     prognose["quelle"] = ["Prognose" if d > stichtag else "geschätzt" for d in prognose["datum"]]
     prognose["infektion"] = modell_sagt_infektion(prognose) if len(prognose) > 0 else pd.Series(dtype=bool)
 
-    df = pd.concat([gemessen, prognose], ignore_index=True).sort_values("datum").reset_index(drop=True)
+    df = pd.concat([gemessen, prognose], ignore_index=True)
+    # Sicherstellen, dass «datum» ein Datum bleibt (pandas 3 macht sonst Text daraus, wenn ein Teil leer ist)
+    df["datum"] = pd.to_datetime(df["datum"])
+    df = df.sort_values("datum").reset_index(drop=True)
     # Spalten, die nur Agrometeo hat, sicher anlegen (bei der Prognose bleiben sie leer)
     for spalte in ["blattnaesse_std", "gradstunden_bn", "dauer", "infektion_staerke"]:
         if spalte not in df:
