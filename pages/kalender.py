@@ -9,16 +9,18 @@ Für die Prognose-Tage schaut das Modell sich das Wetter von Open-Meteo an
 und sagt, an welchen Tagen es eine Infektion gibt. Zusammen mit dem stündlichen Wetter zeigt die Seite für
 14 Tage eine Ampel, wann man spritzen kann.
 
-Das Datum («Heute ist der»), die Agrometeo-Daten, die Keimbereitschaft, das
-Modell, die Ampel und die Fristen kommen aus gemeinsam.py, damit Kalender,
-Wetter-Seite und Dashboard gleich rechnen.
+Das Datum («Heute ist der»), die Agrometeo-Daten, die Keimbereitschaft und das
+Modell kommen aus gemeinsam.py, damit Kalender und Wetter-Seite gleich rechnen.
 
 KI-Hinweis: Dieser Code wurde mit Claude (Anthropic, Claude Opus 5.5) am
 17.11.2026 generiert und danach von uns geprüft und angepasst.
 """
 
+import sqlite3
+
 import altair as alt
 import pandas as pd
+import requests
 import streamlit as st
 
 import gemeinsam as g   # gemeinsame Daten und Funktionen (Datum, Agrometeo, Modell, Saison)
@@ -26,12 +28,102 @@ import gemeinsam as g   # gemeinsame Daten und Funktionen (Datum, Agrometeo, Mod
 # Farben aus dem Konzept
 WEINROT = "#7B1E3A"
 GOLD = "#C9A227"
+FARBEN = ["#D9EAD3", "#FFF2CC", "#F4CCCC"]  # grün, gelb, rot
+AMPEL = ["geeignet", "knapp", "nicht möglich"]
+WOCHENTAGE = ["Mo", "Di", "Mi", "Do", "Fr", "Sa", "So"]
+
+# Wir spritzen nur mit Folpet 80 WG (wie auf der Seite Dosierung).
+# Folpet ist nicht hitzeempfindlich, darum zählen in der Ampel nur Regen und Wind.
+
+# Startwerte der Ampel: (gelb ab, rot ab, Einheit), noch mit dem Winzer bestätigen
+STANDARD = {"Regen": (0.5, 2.0, "mm"), "Wind": (15.0, 25.0, "km/h")}
+
 # Farbe für Tage, an denen der Belag der letzten Spritzung noch schützt
 GRAU = "#EEEEEE"
 
-# Ampel, Journal und Fristen stehen in gemeinsam.py, damit das Dashboard gleich rechnet.
-# Wir spritzen nur mit Folpet 80 WG (wie auf der Seite Dosierung), darum zählen nur Regen und Wind.
-from gemeinsam import AMPEL, FARBEN, SCHUTZ_TAGE, STANDARD, WOCHENTAGE, bewerte_tag
+# Formel 4 aus der Fachlogik: Ein Spritzbelag schützt etwa 10 Tage (mit dem Winzer bestätigen)
+SCHUTZ_TAGE = 10
+
+
+# ---------------------------------------------------------------------------
+# Verbindung zum Journal: Wurde schon gespritzt?
+# ---------------------------------------------------------------------------
+def lade_spritzungen():
+    """Holt alle Spritzungen aus dem Journal (gleiche Datenbank wie die Seite Journal)."""
+    try:
+        con = sqlite3.connect("daten/spritzplaner.db")
+        df = pd.read_sql_query("SELECT datum, mittel FROM spritzungen", con)
+        con.close()
+    except Exception:
+        # Gibt es die Tabelle noch nicht, ist einfach noch nichts gespritzt
+        df = pd.DataFrame(columns=["datum", "mittel"])
+    df["datum"] = pd.to_datetime(df["datum"])
+    return df.sort_values("datum")
+
+
+def pruefe_schutz(infektionen, spritzungen):
+    """Gibt jeder Infektion einen Status: «gespritzt» oder «offen».
+
+    gespritzt: Es wurde in den 10 Tagen vor der Infektion gespritzt (der Belag war schon da)
+               oder nach der Infektion, aber noch vor der Frist.
+    offen:     Weder noch, der Winzer muss noch spritzen.
+    """
+    status = []
+    for _, infektion in infektionen.iterrows():
+        ergebnis = "offen"
+        for spritztag in spritzungen["datum"]:
+            vorher_geschuetzt = spritztag <= infektion["start"] <= spritztag + pd.Timedelta(days=SCHUTZ_TAGE)
+            rechtzeitig_nachher = infektion["start"] < spritztag <= infektion["frist"]
+            if vorher_geschuetzt or rechtzeitig_nachher:
+                ergebnis = "gespritzt"
+        status.append(ergebnis)
+    infektionen["status"] = status
+    return infektionen
+
+
+# ---------------------------------------------------------------------------
+# Wetter von Open-Meteo
+# ---------------------------------------------------------------------------
+@st.cache_data
+def lade_wetter(von, bis):
+    """Lädt das stündliche Wetter (Regen, Wind, Temperatur) für Zizers von Open-Meteo."""
+    parameter = {"latitude": g.ZIZERS_LAT, "longitude": g.ZIZERS_LON, "timezone": "Europe/Zurich",
+                 "hourly": "precipitation,wind_speed_10m",
+                 "start_date": str(von), "end_date": str(bis)}
+    daten = requests.get(g.open_meteo_url(bis), params=parameter, timeout=10).json()["hourly"]
+    wetter = pd.DataFrame(daten)
+    wetter["time"] = pd.to_datetime(wetter["time"])
+    return wetter
+
+
+# ---------------------------------------------------------------------------
+# Ampel
+# ---------------------------------------------------------------------------
+def bewerte_tag(tag, wetter, sonntag_sperren):
+    """Gibt Ampelstufe (0 grün, 1 gelb, 2 rot), beste Startzeit und Gründe für einen Tag zurück."""
+    stunden = wetter[wetter["time"].dt.date == tag.date()].reset_index()
+
+    # Beste Startzeit: Stunde zwischen 6 und 14 Uhr mit am wenigsten Regen in den 6 Stunden danach
+    start, wenig_regen = 6, 999
+    for h in range(6, 15):
+        regen = stunden["precipitation"][h:h + 6].sum()
+        if regen < wenig_regen:
+            start, wenig_regen = h, regen
+
+    fenster = stunden[start:start + 6]
+    werte = {"Regen": fenster["precipitation"].sum(),
+             "Wind": fenster["wind_speed_10m"].max()}
+
+    stufe, gruende = 0, []
+    for name, wert in werte.items():
+        gelb, rot = st.session_state[name + "_gelb"], st.session_state[name + "_rot"]
+        if wert >= gelb:
+            stufe = max(stufe, 2 if wert >= rot else 1)  # der schlechteste Wert bestimmt die Farbe
+            gruende.append(f"{name} {wert:.1f} {STANDARD[name][2]}")
+    if sonntag_sperren and tag.weekday() == 6:
+        stufe = 2
+        gruende.append("Sonntag")
+    return stufe, start, gruende
 
 
 def standardwerte():
@@ -68,7 +160,7 @@ modell, dauer_pro_monat, ergebnis = g.trainiere_modell()
 # Daten laden
 tage = pd.date_range(heute, periods=14)
 try:
-    wetter = g.lade_stundenwetter(heute, tage[-1].date())
+    wetter = lade_wetter(heute, tage[-1].date())
 except Exception:
     st.error("Das Wetter von Open-Meteo konnte nicht geladen werden.")
     st.stop()
@@ -78,9 +170,24 @@ except Exception:
 tageswetter = g.wetter_seit_neujahr(heute)
 # Die Spritzsaison beginnt mit der Keimbereitschaft (Temperatursumme 140, siehe Wetter-Seite)
 keimbereit = g.keimbereitschaft(tageswetter)
+saison = g.in_saison(tageswetter["datum"], keimbereit)
 
-# Infektionen mit Frist und Status (gespritzt/offen) und die Spritzungen aus dem Journal
-infektionen, spritzungen = g.infektionen_mit_frist(heute)
+# Infektionen der letzten 14 Tage und der nächsten 14 Tage, nur in der Spritzsaison
+infektionen = tageswetter[tageswetter["infektion"] & saison
+                          & (tageswetter["datum"] >= pd.Timestamp(heute) - pd.Timedelta(days=14))].copy()
+infektionen["start"] = infektionen["datum"]
+# Inkubationsdauer: echte Dauer von Agrometeo, für die Prognose der gelernte Monats-Durchschnitt
+dauer = infektionen["dauer"] if "dauer" in infektionen else pd.Series(index=infektionen.index, dtype=float)
+dauer = dauer.fillna(infektionen["datum"].dt.month.map(dauer_pro_monat)).fillna(10)
+infektionen["ende"] = infektionen["start"] + pd.to_timedelta(dauer, unit="D")
+# Formel 3: spritzen bis = Infektion + 80 % der Inkubationsdauer
+infektionen["frist"] = (infektionen["start"] + (infektionen["ende"] - infektionen["start"]) * 0.8).dt.floor("D")
+
+# Spritzungen aus dem Journal holen (nur bis «heute», wichtig für den Demo-Modus)
+spritzungen = lade_spritzungen()
+spritzungen = spritzungen[spritzungen["datum"] <= pd.Timestamp(heute)]
+# Für jede Infektion prüfen: geschützt, behandelt oder offen?
+infektionen = pruefe_schutz(infektionen, spritzungen)
 
 # Laufende Inkubationen: Balken, die in die 14 Tage hineinreichen
 laufend = infektionen[(infektionen["start"] <= tage[-1]) & (infektionen["ende"] > tage[0])].copy()
