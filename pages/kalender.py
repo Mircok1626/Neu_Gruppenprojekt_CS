@@ -161,10 +161,10 @@ modell, dauer_pro_monat, ergebnis = g.trainiere_modell()
 tage = pd.date_range(heute, periods=14)
 try:
     wetter = lade_wetter(heute, tage[-1].date())
-except Exception:
-    st.error("Das Wetter von Open-Meteo konnte nicht geladen werden.")
+except Exception as e:
+    st.error(f"Fehler beim Laden: {type(e).__name__}: {e}")
     st.stop()
-
+    
 # Tageswerte vom 1.1. bis 14 Tage nach heute (aus gemeinsam.py):
 # bis heute gemessen von Agrometeo, danach Prognose von Open-Meteo mit dem Modell
 tageswetter = g.wetter_seit_neujahr(heute)
