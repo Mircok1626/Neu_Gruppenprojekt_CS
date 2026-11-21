@@ -53,7 +53,7 @@ def standardwerte():
 if "Rain_gelb" not in st.session_state:
     standardwerte()
 
-st.title("Calendar: When can I spray?")
+st.title("Calendar - When can I spray?")
 
 # Das Datum wird links in der Seitenleiste gewählt und gilt für alle Seiten
 heute = g.heute()

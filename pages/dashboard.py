@@ -18,6 +18,7 @@ import gemeinsam as g   # gemeinsame Daten und Funktionen (Datum, Agrometeo, Mod
 WEINROT = "#7B1E3A"
 GOLD = "#C9A227"
 FARBEN = ["#D9EAD3", "#FFF2CC", "#F4CCCC"]  # grün, gelb, rot
+GRAU = "#EEEEEE"                             # Tage, an denen die letzte Spritzung noch schützt
 AMPEL = ["suitable", "marginal", "not possible"]
 WOCHENTAGE = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
 
@@ -45,6 +46,12 @@ bewertung = [g.bewerte_tag(tag, wetter, True) for tag in tage]
 # Offene Infektionen: schon passiert, Frist noch nicht vorbei, noch nicht gespritzt
 aktuell = infektionen[(infektionen["start"] <= heute_ts) & (infektionen["frist"] >= heute_ts)]
 offen = aktuell[aktuell["status"] == "open"]
+
+# Bis wann schützt die letzte Spritzung? (keine Spritzung: dann schützt nichts)
+if len(spritzungen) > 0:
+    geschuetzt_bis = spritzungen["datum"].iloc[-1] + pd.Timedelta(days=g.SCHUTZ_TAGE)
+else:
+    geschuetzt_bis = None
 
 # Die nächste Frist und die grünen Tage davor
 if len(offen) > 0:
@@ -100,9 +107,9 @@ else:
 
 
 # ---------------------------------------------------------------------------
-# Vier Kennzahlen
+# Drei Kennzahlen
 # ---------------------------------------------------------------------------
-spalte1, spalte2, spalte3, spalte4 = st.columns(4)
+spalte1, spalte2, spalte3 = st.columns(3)
 
 # 1) Keimbereitschaft (Seite Wetter)
 with spalte1.container(border=True):
@@ -113,27 +120,19 @@ with spalte1.container(border=True):
     summe = tageswetter.loc[tageswetter["datum"] <= heute_ts, "temperatursumme"].max()
     st.caption(f"Temperature sum {summe:.0f} / {g.KEIMBEREIT_AB}")
 
-# 2) Infektionen dieses Jahr (bis heute) und in der Prognose
+# 2) Laufende Inkubationen: Infektion passiert, Inkubation noch nicht fertig
 with spalte2.container(border=True):
-    bisher = infektionen[infektionen["start"] <= heute_ts]
-    prognose = infektionen[infektionen["start"] > heute_ts]
-    st.metric(f"Infections {heute.year}", len(bisher))
-    st.caption(f"+ {len(prognose)} in the forecast")
-
-# 3) Laufende Inkubationen: Infektion passiert, Inkubation noch nicht fertig
-with spalte3.container(border=True):
-    laufend = bisher[bisher["ende"] > heute_ts]
+    laufend = infektionen[(infektionen["start"] <= heute_ts) & (infektionen["ende"] > heute_ts)]
     st.metric("Ongoing incubations", len(laufend))
     if len(laufend) > 0:
         st.caption(f"Oil spots from {laufend['ende'].min():%d.%m.}")
     else:
         st.caption("None")
 
-# 4) Letzte Spritzung (Journal)
-with spalte4.container(border=True):
+# 3) Letzte Spritzung (Journal)
+with spalte3.container(border=True):
     if len(spritzungen) > 0:
         letzte = spritzungen["datum"].iloc[-1]
-        geschuetzt_bis = letzte + pd.Timedelta(days=g.SCHUTZ_TAGE)
         st.metric("Last spraying", f"{letzte:%d.%m.}")
         if geschuetzt_bis >= heute_ts:
             st.caption(f"Protected until {geschuetzt_bis:%d.%m.}")
@@ -147,23 +146,43 @@ with spalte4.container(border=True):
 # ---------------------------------------------------------------------------
 # Spritzfenster: nächste 7 Tage (wie im Kalender, aber kürzer)
 # ---------------------------------------------------------------------------
+def kaestchen(farbe, rand="1px solid #CCCCCC"):
+    """Kleines farbiges Quadrat für die Legende (wie im Kalender)."""
+    return (f"<span style='display:inline-block; width:12px; height:12px; background:{farbe}; "
+            f"border:{rand}; border-radius:3px; margin:0 4px 0 14px; vertical-align:middle;'></span>")
+
+
 with st.container(border=True):
-    st.subheader("Spray windows – next 7 days")
+    # Überschrift links, Legende der Farben rechts (wie im Kalender)
+    titel, legende = st.columns([1, 2], vertical_alignment="bottom")
+    titel.subheader("Spray windows – next 7 days")
+    legende.markdown(
+        "<div style='text-align:right; font-size:13px;'>"
+        + kaestchen(FARBEN[0]) + "Suitable"
+        + kaestchen(FARBEN[1]) + "Marginal"
+        + kaestchen(FARBEN[2]) + "Not possible"
+        + kaestchen(GRAU) + "Protected"
+        + kaestchen("white", f"3px solid {GOLD}") + "Recommended"
+        + "</div>", unsafe_allow_html=True)
+
     spalten = st.columns(7)
     for spalte, tag, (stufe, start, gruende) in zip(spalten, tage[:7], bewertung[:7]):
-        text = AMPEL[stufe] + (f" · from {start}:00" if stufe < 2 else "")
+        # Noch geschützt und keine offene Infektion: Spritzen ist nicht nötig (grau, wie im Kalender)
+        if len(offen) == 0 and geschuetzt_bis is not None and tag <= geschuetzt_bis:
+            farbe, text, gruende = GRAU, "protected · not needed", []
+        else:
+            farbe, text = FARBEN[stufe], AMPEL[stufe] + (f" · from {start}:00" if stufe < 2 else "")
         # Goldener Rahmen beim empfohlenen Tag
         if len(gute) > 0 and tag == gute[0]:
             rahmen = f"3px solid {GOLD}"
         else:
             rahmen = "1px solid #CCCCCC"
         spalte.markdown(f"""
-        <div style="background-color: {FARBEN[stufe]}; border: {rahmen}; border-radius: 10px;
+        <div style="background-color: {farbe}; border: {rahmen}; border-radius: 10px;
                     padding: 8px; min-height: 110px; font-size: 13px;">
             <b>{WOCHENTAGE[tag.weekday()]} {tag:%d.%m.}</b><br>{text}<br>
             <small>{", ".join(gruende)}</small>
         </div>""", unsafe_allow_html=True)
-    st.caption("Green = suitable · Yellow = marginal · Red = not possible · Gold border = recommended")
 
 
 # ---------------------------------------------------------------------------
