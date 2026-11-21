@@ -14,13 +14,9 @@ import streamlit as st
 
 import gemeinsam as g   # gemeinsame Daten und Funktionen (Datum, Agrometeo, Modell, Saison)
 
-# Farben wie im Kalender
-WEINROT = "#7B1E3A"
-GOLD = "#C9A227"
-FARBEN = ["#D9EAD3", "#FFF2CC", "#F4CCCC"]  # grün, gelb, rot
-GRAU = "#EEEEEE"                             # Tage, an denen die letzte Spritzung noch schützt
-AMPEL = ["suitable", "marginal", "not possible"]
-WOCHENTAGE = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
+# Farben und Wochentage wie im Kalender (aus gemeinsam.py)
+WEINROT = g.WEINROT
+WOCHENTAGE = g.WOCHENTAGE
 
 
 # ---------------------------------------------------------------------------
@@ -59,7 +55,7 @@ if len(offen) > 0:
     frist = infektion["frist"]
     gute = [tag for tag, b in zip(tage, bewertung) if b[0] == 0 and tag <= frist]
 else:
-    gute = []
+    frist, gute = None, []
 
 
 # ---------------------------------------------------------------------------
@@ -144,45 +140,11 @@ with spalte3.container(border=True):
 
 
 # ---------------------------------------------------------------------------
-# Spritzfenster: nächste 7 Tage (wie im Kalender, aber kürzer)
+# Spritzfenster: genau dieselbe Anzeige wie im Kalender, aber nur die ersten 7 Tage
 # ---------------------------------------------------------------------------
-def kaestchen(farbe, rand="1px solid #CCCCCC"):
-    """Kleines farbiges Quadrat für die Legende (wie im Kalender)."""
-    return (f"<span style='display:inline-block; width:12px; height:12px; background:{farbe}; "
-            f"border:{rand}; border-radius:3px; margin:0 4px 0 14px; vertical-align:middle;'></span>")
-
-
 with st.container(border=True):
-    # Überschrift links, Legende der Farben rechts (wie im Kalender)
-    titel, legende = st.columns([1, 2], vertical_alignment="bottom")
-    titel.subheader("Spray windows – next 7 days")
-    legende.markdown(
-        "<div style='text-align:right; font-size:13px;'>"
-        + kaestchen(FARBEN[0]) + "Suitable"
-        + kaestchen(FARBEN[1]) + "Marginal"
-        + kaestchen(FARBEN[2]) + "Not possible"
-        + kaestchen(GRAU) + "Protected"
-        + kaestchen("white", f"3px solid {GOLD}") + "Recommended"
-        + "</div>", unsafe_allow_html=True)
-
-    spalten = st.columns(7)
-    for spalte, tag, (stufe, start, gruende) in zip(spalten, tage[:7], bewertung[:7]):
-        # Noch geschützt und keine offene Infektion: Spritzen ist nicht nötig (grau, wie im Kalender)
-        if len(offen) == 0 and geschuetzt_bis is not None and tag <= geschuetzt_bis:
-            farbe, text, gruende = GRAU, "protected · not needed", []
-        else:
-            farbe, text = FARBEN[stufe], AMPEL[stufe] + (f" · from {start}:00" if stufe < 2 else "")
-        # Goldener Rahmen beim empfohlenen Tag
-        if len(gute) > 0 and tag == gute[0]:
-            rahmen = f"3px solid {GOLD}"
-        else:
-            rahmen = "1px solid #CCCCCC"
-        spalte.markdown(f"""
-        <div style="background-color: {farbe}; border: {rahmen}; border-radius: 10px;
-                    padding: 8px; min-height: 110px; font-size: 13px;">
-            <b>{WOCHENTAGE[tag.weekday()]} {tag:%d.%m.}</b><br>{text}<br>
-            <small>{", ".join(gruende)}</small>
-        </div>""", unsafe_allow_html=True)
+    g.zeige_spritzfenster("Spray windows – next 7 days", tage[:7], bewertung[:7], gute, frist,
+                          offen, geschuetzt_bis, spritzungen)
 
 
 # ---------------------------------------------------------------------------
@@ -222,7 +184,7 @@ with rechts.container(border=True):
         # Säulen: der Tag mit dem höchsten Risiko ist dunkel, die anderen hell
         balken = alt.Chart(naechste).mark_bar(cornerRadiusTopLeft=4, cornerRadiusTopRight=4).encode(
             x=alt.X("Day:N", sort=None, title=None, axis=alt.Axis(labelAngle=0)),
-            y=alt.Y("Risk:Q", title="Risk (%)", scale=alt.Scale(domain=[0, 100])),
+            y=alt.Y("Risk:Q", title="Risk (%)", scale=alt.Scale(domain=[0, 110]), axis=alt.Axis(values=[0, 25, 50, 75, 100])),
             color=alt.condition(alt.datum.hoechster, alt.value(WEINROT), alt.value("#D9A5B3")),
         )
         # Die Zahl über jede Säule schreiben
@@ -240,3 +202,4 @@ with rechts.container(border=True):
 st.divider()
 st.caption("Data: Agrometeo station Zizers · Open-Meteo. "
            "The app is a decision aid and not official crop protection advice.")
+

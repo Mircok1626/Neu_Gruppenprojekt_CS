@@ -187,6 +187,8 @@ def wetter_seit_neujahr(stichtag):
     prognose["infektion"] = modell_sagt_infektion(prognose) if len(prognose) > 0 else pd.Series(dtype=bool)
 
     df = pd.concat([gemessen, prognose], ignore_index=True).sort_values("datum").reset_index(drop=True)
+    # Sicherstellen, dass «datum» ein Datum bleibt (auch wenn Open-Meteo nicht erreichbar war)
+    df["datum"] = pd.to_datetime(df["datum"])
     # Spalten, die nur Agrometeo hat, sicher anlegen (bei der Prognose bleiben sie leer)
     for spalte in ["blattnaesse_std", "gradstunden_bn", "dauer", "infektion_staerke"]:
         if spalte not in df:
@@ -320,3 +322,68 @@ def bewerte_tag(tag, wetter, sonntag_sperren):
         stufe = 2
         gruende.append("Sunday")
     return stufe, start, gruende
+
+
+# ---------------------------------------------------------------------------
+# Anzeige der Spritzfenster (Kalender: 14 Tage, Dashboard: 7 Tage)
+# ---------------------------------------------------------------------------
+# Farben aus dem Konzept
+WEINROT = "#7B1E3A"
+GOLD = "#C9A227"
+GRAU = "#EEEEEE"                              # Tage, an denen der Belag der letzten Spritzung noch schützt
+FARBEN = ["#D9EAD3", "#FFF2CC", "#F4CCCC"]    # grün, gelb, rot
+AMPEL = ["suitable", "marginal", "not possible"]
+WOCHENTAGE = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
+
+
+def kaestchen(farbe, rand="1px solid #CCCCCC"):
+    """Kleines farbiges Quadrat für die Legende."""
+    return (f"<span style='display:inline-block; width:12px; height:12px; background:{farbe}; "
+            f"border:{rand}; border-radius:3px; margin:0 4px 0 14px; vertical-align:middle;'></span>")
+
+
+def zeige_spritzfenster(titel, tage, bewertung, gute, frist, offen, geschuetzt_bis, spritzungen):
+    """Zeigt Überschrift, Legende und eine Kachel pro Tag (je 7 Tage pro Reihe)."""
+    # Überschrift links, Legende rechts, beide auf derselben Zeile (display:flex)
+    st.markdown(
+        "<div style='display:flex; justify-content:space-between; align-items:center; "
+        "flex-wrap:wrap; margin-bottom:12px;'>"
+        f"<span style='font-size:1.5rem; font-weight:600;'>{titel}</span>"
+        "<span style='font-size:13px;'>"
+        + kaestchen(FARBEN[0]) + "Suitable"
+        + kaestchen(FARBEN[1]) + "Marginal"
+        + kaestchen(FARBEN[2]) + "Not possible"
+        + kaestchen(GRAU) + "Protected"
+        + kaestchen("white", f"3px solid {GOLD}") + "Recommended"
+        + "</span></div>", unsafe_allow_html=True)
+
+    # Für je 7 Tage eine Reihe mit 7 Spalten
+    spalten = []
+    for _ in range(0, len(tage), 7):
+        spalten = spalten + st.columns(7)
+
+    for spalte, tag, (stufe, start, gruende) in zip(spalten, tage, bewertung):
+        marken = []
+        if tag == tage[0]:
+            marken.append("today")
+        if len(gute) > 0 and tag == gute[-1] and tag != gute[0]:
+            marken.append("last chance")
+        if tag == frist:
+            marken.append("deadline")
+        if tag in list(spritzungen["datum"]):
+            marken.append("sprayed")
+
+        # Noch geschützt und keine offene Infektion: Spritzen ist nicht nötig, also keine Ampel
+        if len(offen) == 0 and geschuetzt_bis is not None and tag <= geschuetzt_bis:
+            farbe, text, gruende = GRAU, "protected<br>not needed", []
+        else:
+            farbe, text = FARBEN[stufe], AMPEL[stufe] + (f"<br>from {start}:00" if stufe < 2 else "")
+        rahmen = f"3px solid {GOLD}" if len(gute) > 0 and tag == gute[0] else "1px solid #CCCCCC"
+
+        spalte.markdown(f"""
+        <div style="background-color: {farbe}; border: {rahmen}; border-radius: 10px;
+                    padding: 8px; min-height: 150px; font-size: 13px; margin-bottom: 8px;">
+            <b>{WOCHENTAGE[tag.weekday()]} {tag:%d.%m.}</b><br>{text}<br>
+            <small>{", ".join(gruende)}</small><br>
+            <b style="color: {WEINROT};">{" · ".join(marken)}</b>
+        </div>""", unsafe_allow_html=True)

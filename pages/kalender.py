@@ -23,20 +23,15 @@ import streamlit as st
 
 import gemeinsam as g   # gemeinsame Daten und Funktionen (Datum, Agrometeo, Modell, Saison)
 
-# Farben aus dem Konzept
-WEINROT = "#7B1E3A"
-GOLD = "#C9A227"
-FARBEN = ["#D9EAD3", "#FFF2CC", "#F4CCCC"]  # grün, gelb, rot
-AMPEL = ["suitable", "marginal", "not possible"]
-WOCHENTAGE = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
+# Farben und Wochentage stehen in gemeinsam.py, damit Kalender und Dashboard gleich aussehen
+WEINROT = g.WEINROT
+GOLD = g.GOLD
+WOCHENTAGE = g.WOCHENTAGE
 
 # Wir spritzen nur mit Folpet 80 WG (wie auf der Seite Dosierung).
 # Folpet ist nicht hitzeempfindlich, darum zählen in der Ampel nur Regen und Wind.
 
 # Startwerte der Ampel und Schutzdauer stehen in gemeinsam.py (g.STANDARD, g.SCHUTZ_TAGE)
-
-# Farbe für Tage, an denen der Belag der letzten Spritzung noch schützt
-GRAU = "#EEEEEE"
 
 
 # ---------------------------------------------------------------------------
@@ -53,7 +48,7 @@ def standardwerte():
 if "Rain_gelb" not in st.session_state:
     standardwerte()
 
-st.title("Calendar - When can I spray?")
+st.title("Calendar: When can I spray?")
 
 # Das Datum wird links in der Seitenleiste gewählt und gilt für alle Seiten
 heute = g.heute()
@@ -163,50 +158,9 @@ with bereich_ampel:
                 st.info("The spray season is over (from the end of August). "
                         "No spraying against downy mildew now.")
 
-    # Spritzfenster: Überschrift links, Legende der Farben rechts
-    titel, legende = st.columns([1, 2], vertical_alignment="bottom")
-    titel.subheader("Spray windows: 14 days")
-
-    def kaestchen(farbe, rand="1px solid #CCCCCC"):
-        """Kleines farbiges Quadrat für die Legende."""
-        return (f"<span style='display:inline-block; width:12px; height:12px; background:{farbe}; "
-                f"border:{rand}; border-radius:3px; margin:0 4px 0 14px; vertical-align:middle;'></span>")
-
-    legende.markdown(
-        "<div style='text-align:right; font-size:13px;'>"
-        + kaestchen(FARBEN[0]) + "Suitable"
-        + kaestchen(FARBEN[1]) + "Marginal"
-        + kaestchen(FARBEN[2]) + "Not possible"
-        + kaestchen(GRAU) + "Protected"
-        + kaestchen("white", f"3px solid {GOLD}") + "Recommended"
-        + "</div>", unsafe_allow_html=True)
-
-    spalten = st.columns(7) + st.columns(7)
-    for spalte, tag, (stufe, start, gruende) in zip(spalten, tage, bewertung):
-        marken = []
-        if tag == tage[0]:
-            marken.append("today")
-        if len(gute) > 0 and tag == gute[-1] and tag != gute[0]:
-            marken.append("last chance")
-        if tag == frist:
-            marken.append("deadline")
-        if tag in list(spritzungen["datum"]):
-            marken.append("sprayed")
-
-        # Noch geschützt und keine offene Infektion: Spritzen ist nicht nötig, also keine Ampel
-        if len(offen) == 0 and geschuetzt_bis is not None and tag <= geschuetzt_bis:
-            farbe, text, gruende = GRAU, "protected<br>not needed", []
-        else:
-            farbe, text = FARBEN[stufe], AMPEL[stufe] + (f"<br>from {start}:00" if stufe < 2 else "")
-        rahmen = f"3px solid {GOLD}" if len(gute) > 0 and tag == gute[0] else "1px solid #CCCCCC"
-
-        spalte.markdown(f"""
-        <div style="background-color: {farbe}; border: {rahmen}; border-radius: 10px;
-                    padding: 8px; min-height: 150px; font-size: 13px; margin-bottom: 8px;">
-            <b>{WOCHENTAGE[tag.weekday()]} {tag:%d.%m.}</b><br>{text}<br>
-            <small>{", ".join(gruende)}</small><br>
-            <b style="color: {WEINROT};">{" · ".join(marken)}</b>
-        </div>""", unsafe_allow_html=True)
+    # Spritzfenster: 14 Tage (dieselbe Anzeige wie auf dem Dashboard, aus gemeinsam.py)
+    g.zeige_spritzfenster("Spray windows: 14 days", tage, bewertung, gute, frist,
+                          offen, geschuetzt_bis, spritzungen)
 
 with bereich_inkubation:
     st.subheader("Ongoing incubations")
