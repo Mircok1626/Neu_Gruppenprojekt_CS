@@ -20,8 +20,8 @@ PROGNOSE_FLAECHE = "#F1E8E0"
 
 def zeige_titel(jahr):
     """Zeigt Titel und Untertitel, gleich wie auf den anderen Seiten."""
-    st.title("Wetter – warum warnt die App?")
-    st.caption(f"Zizers Halde · Saison {jahr}: Temperatur, Niederschlag, Blattnässe und Infektionen auf einen Blick.")
+    st.title("Weather – why does the app warn?")
+    st.caption(f"Zizers Halde · Season {jahr}: temperature, precipitation, leaf wetness and infections at a glance.")
 
 
 def legende(eintraege):
@@ -71,79 +71,79 @@ def zoom_waagrecht():
 def zeige_kombi_diagramm(df, heute):
     """Diagramm 1: Temperatur (Linie), Regen (Balken) und Infektionen (Punkte)."""
     with st.container(border=True):
-        st.subheader("Temperatur, Regen und Infektionen")
+        st.subheader("Temperature, rain and infections")
         legende([
-            (symbol_linie(WEINROT), "Tagesmittel °C"),
-            (symbol_kasten(BLAU), "Regen mm"),
-            (symbol_punkt(WEINROT), "Infektion"),
-            (symbol_punkt(GRAU_PUNKT), "Infektionswetter, aber noch nicht keimbereit"),
-            (symbol_kasten(PROGNOSE_FLAECHE, "1px solid #D8C8B8"), "Prognose"),
+            (symbol_linie(WEINROT), "Daily mean °C"),
+            (symbol_kasten(BLAU), "Rain mm"),
+            (symbol_punkt(WEINROT), "Infection"),
+            (symbol_punkt(GRAU_PUNKT), "Infection weather, but spores not yet ready to germinate"),
+            (symbol_kasten(PROGNOSE_FLAECHE, "1px solid #D8C8B8"), "Forecast"),
         ])
 
         achse = alt.X("datum:T", title=None, axis=alt.Axis(format="%d.%m."))
         basis = alt.Chart(df).encode(x=achse)
-        info = [alt.Tooltip("datum:T", title="Datum", format="%d.%m.%Y"),
-                alt.Tooltip("temp_mittel:Q", title="Tagesmittel °C", format=".1f"),
-                alt.Tooltip("niederschlag_mm:Q", title="Regen mm", format=".1f"),
-                alt.Tooltip("quelle:N", title="Quelle")]
+        info = [alt.Tooltip("datum:T", title="Date", format="%d.%m.%Y"),
+                alt.Tooltip("temp_mittel:Q", title="Daily mean °C", format=".1f"),
+                alt.Tooltip("niederschlag_mm:Q", title="Rain mm", format=".1f"),
+                alt.Tooltip("quelle:N", title="Source")]
 
         regen = basis.mark_bar(color=BLAU, opacity=0.8).encode(
-            y=alt.Y("niederschlag_mm:Q", title="Regen (mm)", axis=alt.Axis(orient="right")), tooltip=info)
+            y=alt.Y("niederschlag_mm:Q", title="Rain (mm)", axis=alt.Axis(orient="right")), tooltip=info)
         temperatur = basis.mark_line(color=WEINROT, strokeWidth=2.5).encode(
-            y=alt.Y("temp_mittel:Q", title="Temperatur (°C)", axis=alt.Axis(orient="left")), tooltip=info
+            y=alt.Y("temp_mittel:Q", title="Temperature (°C)", axis=alt.Axis(orient="left")), tooltip=info
         ).add_params(zoom_waagrecht())   # Zoom gilt für alle Teile, weil sie dieselbe Datumsachse teilen
 
         # Punkte oben im Diagramm: Infektion (weinrot) oder Infektionswetter vor der Keimbereitschaft (grau)
         punkte_daten = df[df["infektion"] | df["vor_keimbereit"]].copy()
-        punkte_daten["art"] = punkte_daten["infektion"].map({True: "Infektion", False: "noch nicht keimbereit"})
+        punkte_daten["art"] = punkte_daten["infektion"].map({True: "Infection", False: "not yet ready to germinate"})
         punkte = alt.Chart(punkte_daten).mark_circle(size=120, opacity=1).encode(
             x=achse, y=alt.value(12),
-            color=alt.Color("art:N", scale=alt.Scale(domain=["Infektion", "noch nicht keimbereit"],
+            color=alt.Color("art:N", scale=alt.Scale(domain=["Infection", "not yet ready to germinate"],
                                                      range=[WEINROT, GRAU_PUNKT]), legend=None),
-            tooltip=[alt.Tooltip("datum:T", title="Datum", format="%d.%m.%Y"),
-                     alt.Tooltip("art:N", title="Art"), alt.Tooltip("quelle:N", title="Quelle")])
+            tooltip=[alt.Tooltip("datum:T", title="Date", format="%d.%m.%Y"),
+                     alt.Tooltip("art:N", title="Type"), alt.Tooltip("quelle:N", title="Source")])
 
         diagramm = alt.layer(prognose_flaeche(df, heute), regen, temperatur, heute_linie(heute), punkte
                              ).resolve_scale(y="independent").properties(height=280)
         st.altair_chart(diagramm, width="stretch")
-        st.caption("Bis heute gemessen von Agrometeo, danach Prognose von Open-Meteo. "
-                   "Infektionen in der Prognose sagt das Modell voraus (wie im Kalender). "
-                   "Zoomen: Mausrad im Diagramm, verschieben: ziehen, zurücksetzen: Doppelklick.")
+        st.caption("Measured by Agrometeo up to today, then forecast from Open-Meteo. "
+                   "Infections in the forecast are predicted by the model (as in the calendar). "
+                   "Zoom: mouse wheel in the chart, pan: drag, reset: double-click.")
 
 
 def zeige_gradstunden_diagramm(df, heute):
     """Diagramm 2: Gradstunden bei Blattnässe, daraus entstehen die Infektionen."""
-    gemessen = df[df["quelle"] == "gemessen"].copy()
+    gemessen = df[df["quelle"] == "measured"].copy()
     with st.container(border=True):
-        st.subheader("Infektionen: Wann war das Blatt lange genug nass und warm?")
-        st.caption(f"Gradstunden = Temperatur aller Stunden mit nassem Blatt zusammengezählt. "
-                   f"Ab {g.GRADSTUNDEN_INFEKTION} Gradstunden gibt es eine Infektion, "
-                   f"aber erst, wenn die Sporen keimbereit sind. Gemessen von Agrometeo.")
+        st.subheader("Infections: When was the leaf wet and warm for long enough?")
+        st.caption(f"Degree hours = temperature of all hours with a wet leaf added up. "
+                   f"From {g.GRADSTUNDEN_INFEKTION} degree hours there is an infection, "
+                   f"but only once the spores are ready to germinate. Measured by Agrometeo.")
         if gemessen.empty:
-            st.info("Für diesen Zeitraum gibt es keine gemessenen Werte von Agrometeo.")
+            st.info("There are no measured values from Agrometeo for this period.")
             return
-        legende([(symbol_kasten(WEINROT), "Infektion"),
-                 (symbol_kasten("#C9A3B0"), "keine Infektion"),
-                 (symbol_linie(WEINROT), f"Grenze {g.GRADSTUNDEN_INFEKTION} Gradstunden")])
+        legende([(symbol_kasten(WEINROT), "Infection"),
+                 (symbol_kasten("#C9A3B0"), "no infection"),
+                 (symbol_linie(WEINROT), f"Threshold {g.GRADSTUNDEN_INFEKTION} degree hours")])
 
-        gemessen["ergebnis"] = gemessen["infektion"].map({True: "Infektion", False: "keine Infektion"})
+        gemessen["ergebnis"] = gemessen["infektion"].map({True: "Infection", False: "no infection"})
         balken = alt.Chart(gemessen).mark_bar().encode(
             x=alt.X("datum:T", title=None, axis=alt.Axis(format="%d.%m."),
                     scale=alt.Scale(domain=[df["datum"].min(), df["datum"].max()])),
-            y=alt.Y("gradstunden_bn:Q", title="Gradstunden bei Blattnässe"),
-            color=alt.Color("ergebnis:N", scale=alt.Scale(domain=["Infektion", "keine Infektion"],
+            y=alt.Y("gradstunden_bn:Q", title="Degree hours with leaf wetness"),
+            color=alt.Color("ergebnis:N", scale=alt.Scale(domain=["Infection", "no infection"],
                                                           range=[WEINROT, "#C9A3B0"]), legend=None),
-            tooltip=[alt.Tooltip("datum:T", title="Datum", format="%d.%m.%Y"),
-                     alt.Tooltip("blattnaesse_std:Q", title="Blatt nass (Stunden)", format=".1f"),
-                     alt.Tooltip("gradstunden_bn:Q", title="Gradstunden", format=".0f"),
-                     alt.Tooltip("blattzahl:Q", title="Blätter pro Trieb", format=".0f"),
-                     alt.Tooltip("ergebnis:N", title="Ergebnis")])
+            tooltip=[alt.Tooltip("datum:T", title="Date", format="%d.%m.%Y"),
+                     alt.Tooltip("blattnaesse_std:Q", title="Leaf wet (hours)", format=".1f"),
+                     alt.Tooltip("gradstunden_bn:Q", title="Degree hours", format=".0f"),
+                     alt.Tooltip("blattzahl:Q", title="Leaves per shoot", format=".0f"),
+                     alt.Tooltip("ergebnis:N", title="Result")])
         grenze = alt.Chart(pd.DataFrame({"y": [g.GRADSTUNDEN_INFEKTION]})).mark_rule(
             color=WEINROT, strokeDash=[4, 4]).encode(y="y:Q")
         diagramm = alt.layer(balken.add_params(zoom_waagrecht()), grenze, heute_linie(heute)).properties(height=250)
         st.altair_chart(diagramm, width="stretch")
-        st.caption("Nicht jeder Tag über der Grenze ist eine Infektion: Agrometeo prüft zusätzlich, ob die Rebe "
-                   "schon genug Blätter hat, die der Pilz befallen kann (z. B. Ende April oft erst 2 kleine Blätter).")
+        st.caption("Not every day above the threshold is an infection: Agrometeo also checks whether the vine "
+                   "already has enough leaves that the fungus can attack (e.g. at the end of April often only 2 small leaves).")
 
 
 def zeige_keimbereitschaft(df, heute, keimbereit):
@@ -153,12 +153,12 @@ def zeige_keimbereitschaft(df, heute, keimbereit):
     summe = bis_heute["temperatursumme"].iloc[-1] if len(bis_heute) > 0 else 0
 
     if keimbereit is not None and keimbereit <= heute:
-        st.success(f"Die Temperatursumme von {g.KEIMBEREIT_AB} wurde am {keimbereit:%d.%m.%Y} erreicht: "
-                   "Die Sporen sind keimbereit, die Spritzsaison hat begonnen.",
+        st.success(f"The temperature sum of {g.KEIMBEREIT_AB} was reached on {keimbereit:%d.%m.%Y}: "
+                   "The spores are ready to germinate, the spray season has begun.",
                    icon=":material/check_circle:")
     else:
-        st.info(f"Die Sporen sind noch nicht keimbereit: Temperatursumme {summe:.0f} von {g.KEIMBEREIT_AB}. "
-                "Erst danach beginnt die Spritzsaison.", icon=":material/info:")
+        st.info(f"The spores are not yet ready to germinate: temperature sum {summe:.0f} of {g.KEIMBEREIT_AB}. "
+                "The spray season only begins after that.", icon=":material/info:")
 
 
 def hauptseite():
@@ -167,18 +167,18 @@ def hauptseite():
     zeige_titel(heute.year)
 
     zeitraum = st.radio(
-        "Zeitraum",
-        ["Seit 1.1.", "3 Wochen + Prognose"],
+        "Period",
+        ["Since 1 Jan", "3 weeks + forecast"],
         index=1,
         horizontal=True,
         label_visibility="collapsed"
     )
 
     try:
-        with st.spinner("Lade Wetterdaten..."):
+        with st.spinner("Loading weather data..."):
             df_gesamt = g.wetter_seit_neujahr(heute.date())
     except Exception as e:
-        st.error(f"Fehler beim Laden der Wetterdaten: {e}")
+        st.error(f"Error loading the weather data: {e}")
         return
 
     keimbereit = g.keimbereitschaft(df_gesamt)
@@ -186,7 +186,7 @@ def hauptseite():
     df_gesamt["vor_keimbereit"] = ((df_gesamt["gradstunden_bn"].fillna(0) >= g.GRADSTUNDEN_INFEKTION)
                                    & ~df_gesamt["keimbereit"])
 
-    if zeitraum == "3 Wochen + Prognose":
+    if zeitraum == "3 weeks + forecast":
         df_anzeige = df_gesamt[df_gesamt["datum"] >= heute - pd.Timedelta(days=21)]
     else:
         df_anzeige = df_gesamt
@@ -195,11 +195,11 @@ def hauptseite():
     zeige_gradstunden_diagramm(df_anzeige, heute)
     zeige_keimbereitschaft(df_gesamt, heute, keimbereit)
 
-    with st.expander("Rohdaten & Berechnungen anzeigen"):
+    with st.expander("Show raw data & calculations"):
         spalten = ["datum", "quelle", "temp_mittel", "niederschlag_mm", "blattnaesse_std",
                    "gradstunden_bn", "temperatursumme", "keimbereit", "infektion"]
         st.dataframe(df_anzeige[[s for s in spalten if s in df_anzeige]], width="stretch", hide_index=True)
-        st.caption("Quelle: Agrometeo (gemessen) und Open-Meteo (Prognose) · Station Zizers")
+        st.caption("Source: Agrometeo (measured) and Open-Meteo (forecast) · Zizers station")
 
 
 hauptseite()

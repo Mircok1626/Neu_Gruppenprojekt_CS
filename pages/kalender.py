@@ -1,4 +1,3 @@
-
 # Hier wird die Seite Kalender codiert.
 """Kalender: Wann kann ich spritzen?
 
@@ -30,14 +29,14 @@ import gemeinsam as g   # gemeinsame Daten und Funktionen (Datum, Agrometeo, Mod
 WEINROT = "#7B1E3A"
 GOLD = "#C9A227"
 FARBEN = ["#D9EAD3", "#FFF2CC", "#F4CCCC"]  # grün, gelb, rot
-AMPEL = ["geeignet", "knapp", "nicht möglich"]
-WOCHENTAGE = ["Mo", "Di", "Mi", "Do", "Fr", "Sa", "So"]
+AMPEL = ["suitable", "marginal", "not possible"]
+WOCHENTAGE = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
 
 # Wir spritzen nur mit Folpet 80 WG (wie auf der Seite Dosierung).
 # Folpet ist nicht hitzeempfindlich, darum zählen in der Ampel nur Regen und Wind.
 
 # Startwerte der Ampel: (gelb ab, rot ab, Einheit), noch mit dem Winzer bestätigen
-STANDARD = {"Regen": (0.5, 2.0, "mm"), "Wind": (15.0, 25.0, "km/h")}
+STANDARD = {"Rain": (0.5, 2.0, "mm"), "Wind": (15.0, 25.0, "km/h")}
 
 # Farbe für Tage, an denen der Belag der letzten Spritzung noch schützt
 GRAU = "#EEEEEE"
@@ -63,20 +62,20 @@ def lade_spritzungen():
 
 
 def pruefe_schutz(infektionen, spritzungen):
-    """Gibt jeder Infektion einen Status: «gespritzt» oder «offen».
+    """Gibt jeder Infektion einen Status: «sprayed» oder «open».
 
-    gespritzt: Es wurde in den 10 Tagen vor der Infektion gespritzt (der Belag war schon da)
-               oder nach der Infektion, aber noch vor der Frist.
-    offen:     Weder noch, der Winzer muss noch spritzen.
+    sprayed: Es wurde in den 10 Tagen vor der Infektion gespritzt (der Belag war schon da)
+             oder nach der Infektion, aber noch vor der Frist.
+    open:    Weder noch, der Winzer muss noch spritzen.
     """
     status = []
     for _, infektion in infektionen.iterrows():
-        ergebnis = "offen"
+        ergebnis = "open"
         for spritztag in spritzungen["datum"]:
             vorher_geschuetzt = spritztag <= infektion["start"] <= spritztag + pd.Timedelta(days=SCHUTZ_TAGE)
             rechtzeitig_nachher = infektion["start"] < spritztag <= infektion["frist"]
             if vorher_geschuetzt or rechtzeitig_nachher:
-                ergebnis = "gespritzt"
+                ergebnis = "sprayed"
         status.append(ergebnis)
     infektionen["status"] = status
     return infektionen
@@ -112,7 +111,7 @@ def bewerte_tag(tag, wetter, sonntag_sperren):
             start, wenig_regen = h, regen
 
     fenster = stunden[start:start + 6]
-    werte = {"Regen": fenster["precipitation"].sum(),
+    werte = {"Rain": fenster["precipitation"].sum(),
              "Wind": fenster["wind_speed_10m"].max()}
 
     stufe, gruende = 0, []
@@ -123,7 +122,7 @@ def bewerte_tag(tag, wetter, sonntag_sperren):
             gruende.append(f"{name} {wert:.1f} {STANDARD[name][2]}")
     if sonntag_sperren and tag.weekday() == 6:
         stufe = 2
-        gruende.append("Sonntag")
+        gruende.append("Sunday")
     return stufe, start, gruende
 
 
@@ -135,25 +134,25 @@ def standardwerte():
 
 
 # Beim ersten Öffnen der Seite die Startwerte setzen
-if "Regen_gelb" not in st.session_state:
+if "Rain_gelb" not in st.session_state:
     standardwerte()
 
-st.title("Kalender: Wann kann ich spritzen?")
+st.title("Calendar: When can I spray?")
 
 # Das Datum wird links in der Seitenleiste gewählt und gilt für alle Seiten
 heute = g.heute()
-sonntag_sperren = st.checkbox("Sonntag sperren", value=True)
+sonntag_sperren = st.checkbox("Block Sundays", value=True)
 
 # Platzhalter, damit Ampel und Inkubationen oberhalb der Grenzwerte erscheinen
 bereich_ampel = st.container()
 bereich_inkubation = st.container()
 
-with st.expander("Grenzwerte der Ampel"):
+with st.expander("Traffic light thresholds"):
     for name, (gelb, rot, einheit) in STANDARD.items():
         g1, g2 = st.columns(2)
-        g1.number_input(f"{name} gelb ab ({einheit})", key=name + "_gelb", step=0.5)
-        g2.number_input(f"{name} rot ab ({einheit})", key=name + "_rot", step=0.5)
-    st.button("Standardwerte", on_click=standardwerte)
+        g1.number_input(f"{name} yellow from ({einheit})", key=name + "_gelb", step=0.5)
+        g2.number_input(f"{name} red from ({einheit})", key=name + "_rot", step=0.5)
+    st.button("Default values", on_click=standardwerte)
 
 # Modell trainieren (passiert nur beim ersten Mal, danach ist es gespeichert)
 modell, dauer_pro_monat, ergebnis = g.trainiere_modell()
@@ -163,7 +162,7 @@ tage = pd.date_range(heute, periods=14)
 try:
     wetter = lade_wetter(heute, tage[-1].date())
 except Exception:
-    st.error("Das Wetter von Open-Meteo konnte nicht geladen werden.")
+    st.error("The weather from Open-Meteo could not be loaded.")
     st.stop()
 
 # Tageswerte vom 1.1. bis 14 Tage nach heute (aus gemeinsam.py):
@@ -195,8 +194,8 @@ laufend = infektionen[(infektionen["start"] <= tage[-1]) & (infektionen["ende"] 
 # Schon passierte Infektionen, deren Frist noch nicht vorbei ist
 aktuell = laufend[(laufend["start"] <= tage[0]) & (laufend["frist"] >= tage[0])]
 # Offen sind davon nur die, gegen die noch nicht gespritzt wurde
-offen = aktuell[aktuell["status"] == "offen"]
-abgedeckt = aktuell[aktuell["status"] == "gespritzt"]
+offen = aktuell[aktuell["status"] == "open"]
+abgedeckt = aktuell[aktuell["status"] == "sprayed"]
 
 # Bis wann schützt die letzte Spritzung? (keine Spritzung: dann schützt nichts)
 if len(spritzungen) > 0:
@@ -212,13 +211,13 @@ with bereich_ampel:
     if len(spritzungen) > 0:
         letzte = spritzungen.iloc[-1]
         if geschuetzt_bis >= pd.Timestamp(heute):
-            st.success(f"Letzte Spritzung laut Journal: {letzte['datum']:%d.%m.} mit {letzte['mittel']} "
-                       f"→ geschützt bis {geschuetzt_bis:%d.%m.}")
+            st.success(f"Last spraying according to journal: {letzte['datum']:%d.%m.} with {letzte['mittel']} "
+                       f"→ protected until {geschuetzt_bis:%d.%m.}")
         else:
-            st.warning(f"Letzte Spritzung laut Journal: {letzte['datum']:%d.%m.} mit {letzte['mittel']} "
-                       f"→ Schutz vorbei seit {geschuetzt_bis:%d.%m.}")
+            st.warning(f"Last spraying according to journal: {letzte['datum']:%d.%m.} with {letzte['mittel']} "
+                       f"→ protection ended on {geschuetzt_bis:%d.%m.}")
     else:
-        st.caption("Noch keine Spritzung im Journal erfasst.")
+        st.caption("No spraying recorded in the journal yet.")
 
     # Frist-Box (weinrot): die nächste Frist bestimmt die Planung
     if len(offen) > 0:
@@ -227,42 +226,42 @@ with bereich_ampel:
         gute = [tag for tag, b in zip(tage, bewertung) if b[0] == 0 and tag <= frist]
         if len(gute) > 0:
             start = bewertung[list(tage).index(gute[0])][1]
-            empfehlung = f"Empfohlen: {WOCHENTAGE[gute[0].weekday()]}, {gute[0]:%d.%m.} ab {start} Uhr"
+            empfehlung = f"Recommended: {WOCHENTAGE[gute[0].weekday()]}, {gute[0]:%d.%m.} from {start}:00"
         else:
-            empfehlung = "Kein grüner Tag vor der Frist. Prüfe die gelben Tage."
+            empfehlung = "No green day before the deadline. Check the yellow days."
         # Das Wetter am Tag der Infektion (von Open-Meteo), damit man sieht, warum gewarnt wird
-        wetter_text = f"{infektion['niederschlag_mm']:.1f} mm Regen, {infektion['temp_mittel']:.0f} °C"
+        wetter_text = f"{infektion['niederschlag_mm']:.1f} mm rain, {infektion['temp_mittel']:.0f} °C"
         # Gibt es noch weitere offene Infektionen? Dann darauf hinweisen.
         if len(offen) > 1:
-            weitere = f"<br>Dazu {len(offen) - 1} weitere Infektion(en), siehe «Laufende Inkubationen»."
+            weitere = f"<br>Plus {len(offen) - 1} more infection(s), see «Ongoing incubations»."
         else:
             weitere = ""
         st.markdown(f"""
         <div style="background-color: {WEINROT}; color: white; padding: 20px; border-radius: 15px;">
-            <p style="margin: 0; color: #F3D9DF;">Infektion am {infektion['start']:%d.%m.} · Wetter an diesem Tag: {wetter_text}</p>
-            <h3 style="margin: 0; color: white;">Spritzen bis {WOCHENTAGE[frist.weekday()]}, {frist:%d.%m.}</h3>
+            <p style="margin: 0; color: #F3D9DF;">Infection on {infektion['start']:%d.%m.} · Weather on that day: {wetter_text}</p>
+            <h3 style="margin: 0; color: white;">Spray by {WOCHENTAGE[frist.weekday()]}, {frist:%d.%m.}</h3>
             <p style="margin: 0;">{empfehlung}{weitere}</p>
         </div>""", unsafe_allow_html=True)
-        st.caption("Frist = letzter sicherer Spritztag, bevor die Krankheit ausbricht.")
+        st.caption("Deadline = last safe spray day before the disease breaks out.")
     else:
         frist, gute = None, []
         if g.in_saison(pd.Series([pd.Timestamp(heute)]), keimbereit).iloc[0]:
             if len(abgedeckt) > 0:
-                st.info(f"Keine offene Infektion. {len(abgedeckt)} Infektion(en) sind durch "
-                        "deine Spritzungen abgedeckt. Spritzen ist im Moment nicht nötig.")
+                st.info(f"No open infection. {len(abgedeckt)} infection(s) are covered by "
+                        "your sprayings. Spraying is not necessary at the moment.")
             else:
-                st.info("Keine offene Infektion. Spritzen ist im Moment nicht nötig.")
+                st.info("No open infection. Spraying is not necessary at the moment.")
         else:
             if keimbereit is None or pd.Timestamp(heute) < keimbereit:
-                st.info("Die Spritzsaison hat noch nicht begonnen: Die Sporen sind noch nicht "
-                        "keimbereit (Temperatursumme unter 140, siehe Wetter-Seite).")
+                st.info("The spray season has not started yet: the spores are not yet "
+                        "ready to germinate (temperature sum below 140, see Weather page).")
             else:
-                st.info("Die Spritzsaison ist vorbei (ab Ende August). "
-                        "Gegen Falschen Mehltau wird jetzt nicht gespritzt.")
+                st.info("The spray season is over (from the end of August). "
+                        "No spraying against downy mildew now.")
 
     # Spritzfenster: Überschrift links, Legende der Farben rechts
     titel, legende = st.columns([1, 2], vertical_alignment="bottom")
-    titel.subheader("Spritzfenster: 14 Tage")
+    titel.subheader("Spray windows: 14 days")
 
     def kaestchen(farbe, rand="1px solid #CCCCCC"):
         """Kleines farbiges Quadrat für die Legende."""
@@ -271,30 +270,30 @@ with bereich_ampel:
 
     legende.markdown(
         "<div style='text-align:right; font-size:13px;'>"
-        + kaestchen(FARBEN[0]) + "Geeignet"
-        + kaestchen(FARBEN[1]) + "Knapp"
-        + kaestchen(FARBEN[2]) + "Nicht möglich"
-        + kaestchen(GRAU) + "Geschützt"
-        + kaestchen("white", f"3px solid {GOLD}") + "Empfohlen"
+        + kaestchen(FARBEN[0]) + "Suitable"
+        + kaestchen(FARBEN[1]) + "Marginal"
+        + kaestchen(FARBEN[2]) + "Not possible"
+        + kaestchen(GRAU) + "Protected"
+        + kaestchen("white", f"3px solid {GOLD}") + "Recommended"
         + "</div>", unsafe_allow_html=True)
 
     spalten = st.columns(7) + st.columns(7)
     for spalte, tag, (stufe, start, gruende) in zip(spalten, tage, bewertung):
         marken = []
         if tag == tage[0]:
-            marken.append("heute")
+            marken.append("today")
         if len(gute) > 0 and tag == gute[-1] and tag != gute[0]:
-            marken.append("letzte Chance")
+            marken.append("last chance")
         if tag == frist:
-            marken.append("Frist")
+            marken.append("deadline")
         if tag in list(spritzungen["datum"]):
-            marken.append("gespritzt")
+            marken.append("sprayed")
 
         # Noch geschützt und keine offene Infektion: Spritzen ist nicht nötig, also keine Ampel
         if len(offen) == 0 and geschuetzt_bis is not None and tag <= geschuetzt_bis:
-            farbe, text, gruende = GRAU, "geschützt<br>nicht nötig", []
+            farbe, text, gruende = GRAU, "protected<br>not needed", []
         else:
-            farbe, text = FARBEN[stufe], AMPEL[stufe] + (f"<br>ab {start} Uhr" if stufe < 2 else "")
+            farbe, text = FARBEN[stufe], AMPEL[stufe] + (f"<br>from {start}:00" if stufe < 2 else "")
         rahmen = f"3px solid {GOLD}" if len(gute) > 0 and tag == gute[0] else "1px solid #CCCCCC"
 
         spalte.markdown(f"""
@@ -306,32 +305,32 @@ with bereich_ampel:
         </div>""", unsafe_allow_html=True)
 
 with bereich_inkubation:
-    st.subheader("Laufende Inkubationen")
+    st.subheader("Ongoing incubations")
     if len(laufend) == 0:
-        st.write("Keine laufenden Inkubationen in diesen 14 Tagen.")
+        st.write("No ongoing incubations in these 14 days.")
     else:
-        # Name des Balkens, z. B. "06.08. · offen" oder "20.07. · gespritzt (Prognose)"
+        # Name des Balkens, z. B. "06.08. · open" oder "20.07. · sprayed (forecast)"
         laufend["name"] = (laufend["start"].dt.strftime("%d.%m.") + " · " + laufend["status"]
-                           + laufend["quelle"].map({"gemessen": "", "geschätzt": " (geschätzt)", "Prognose": " (Prognose)"}))
+                           + laufend["quelle"].map({"measured": "", "estimated": " (estimated)", "forecast": " (forecast)"}))
         # Farbe: gemessen offen = weinrot, gemessen gespritzt = grün,
         # geschätzt (Prognose) = dieselben Farben, aber heller
         laufend["art"] = laufend["status"]
-        prognose_zeile = laufend["quelle"] != "gemessen"   # vom Modell geschätzt
-        laufend.loc[prognose_zeile & (laufend["status"] == "offen"), "art"] = "offen (Prognose)"
-        laufend.loc[prognose_zeile & (laufend["status"] == "gespritzt"), "art"] = "gespritzt (Prognose)"
-        laufend["frist_text"] = "spritzen bis " + laufend["frist"].dt.strftime("%d.%m.")
+        prognose_zeile = laufend["quelle"] != "measured"   # vom Modell geschätzt
+        laufend.loc[prognose_zeile & (laufend["status"] == "open"), "art"] = "open (forecast)"
+        laufend.loc[prognose_zeile & (laufend["status"] == "sprayed"), "art"] = "sprayed (forecast)"
+        laufend["frist_text"] = "spray by " + laufend["frist"].dt.strftime("%d.%m.")
 
         achse = alt.X("start:T", title=None, scale=alt.Scale(domain=[tage[0], tage[-1] + pd.Timedelta(days=1)]),
                       axis=alt.Axis(format="%d.%m.", tickCount=14, grid=True))
         zeile = alt.Y("name:N", title=None, sort=alt.SortField("start"))  # nach Datum sortiert
-        farben = alt.Scale(domain=["offen", "gespritzt", "offen (Prognose)", "gespritzt (Prognose)"],
+        farben = alt.Scale(domain=["open", "sprayed", "open (forecast)", "sprayed (forecast)"],
                            range=[WEINROT, "#6AA84F", "#D9A5B3", "#C5E0B4"])
         # Was beim Darüberfahren mit der Maus erscheint (ohne «art», mit schönen Titeln)
         info_balken = [alt.Tooltip("start:T", title="Start", format="%d.%m."),
                        alt.Tooltip("name:N", title="Name"),
-                       alt.Tooltip("ende:T", title="Ende", format="%d.%m.")]
+                       alt.Tooltip("ende:T", title="End", format="%d.%m.")]
         info_frist = [alt.Tooltip("name:N", title="Name"),
-                      alt.Tooltip("frist:T", title="Spritzen bis", format="%d.%m.")]
+                      alt.Tooltip("frist:T", title="Spray by", format="%d.%m.")]
 
         # Balken vom Infektionstag bis zum Ende der Inkubation
         balken = alt.Chart(laufend).mark_bar(height=18, cornerRadius=4, clip=True).encode(
@@ -344,35 +343,35 @@ with bereich_inkubation:
         # Auf dem dunkelroten Balken weisse Schrift, sonst dunkle Schrift (besser lesbar)
         texte = alt.Chart(laufend).mark_text(align="left", dx=6, fontWeight="bold", clip=True).encode(
             x="frist:T", y=zeile, text="frist_text:N",
-            color=alt.condition(alt.datum.art == "offen", alt.value("white"), alt.value("#5C4A12")),
+            color=alt.condition(alt.datum.art == "open", alt.value("white"), alt.value("#5C4A12")),
             tooltip=info_frist)
 
         diagramm = (balken + striche + texte).properties(height=40 * len(laufend) + 20)
         st.altair_chart(diagramm, width="stretch")
-        st.caption("Balken: vom Infektionstag bis zum Ende der Inkubation. "
-                   "Goldener Strich: bis dann muss gespritzt sein.")
+        st.caption("Bar: from the day of infection to the end of incubation. "
+                   "Gold line: spraying must be done by then.")
 
 # Erklärung des Modells (aufklappbar)
-with st.expander("Wie erkennt der Kalender Infektionen? (Machine Learning)"):
+with st.expander("How does the calendar detect infections? (Machine Learning)"):
     st.markdown(
-        "Ein **Random Forest** (300 Entscheidungsbäume) hat aus den Agrometeo-Daten "
-        "**2019 bis 2025** (7 Jahre) gelernt, bei welchem Wetter es eine Infektion gibt: "
-        "Temperatur (min, Mittel, max), Regen am Tag und am Vortag sowie die Jahreszeit. "
-        "Für vergangene Tage nimmt der Kalender die gemessenen Infektionen von Agrometeo. "
-        "Für die Prognose-Tage schaut das Modell sich das Wetter von Open-Meteo an und sagt, "
-        "ob es eine Infektion gibt: ja oder nein. Gewarnt wird nur in der Spritzsaison: "
-        "ab der Keimbereitschaft (Temperatursumme 140) bis Ende August."
+        "A **Random Forest** (300 decision trees) learned from the Agrometeo data "
+        "**2019 to 2025** (7 years) which weather leads to an infection: "
+        "temperature (min, mean, max), rain on the day and the day before, and the time of year. "
+        "For past days, the calendar uses the measured infections from Agrometeo. "
+        "For the forecast days, the model looks at the weather from Open-Meteo and says "
+        "whether there will be an infection: yes or no. Warnings are only given during the spray season: "
+        "from germination readiness (temperature sum 140) until the end of August."
     )
-    st.markdown(f"**Test mit der Saison {g.TESTJAHR}** (Tage, die das Modell beim Lernen nie gesehen hat):")
+    st.markdown(f"**Test with the {g.TESTJAHR} season** (days the model never saw during training):")
     k1, k2, k3 = st.columns(3)
-    k1.metric("Infektionen erkannt", f"{ergebnis['erkannt']} von {ergebnis['total']}")
-    k2.metric("Verpasst", ergebnis["verpasst"])
-    k3.metric("Fehlalarme", ergebnis["fehlalarme"])
-    st.caption("Eine verpasste Infektion ist gefährlicher als ein Fehlalarm. "
-               "Das Modell lernt mit den Messungen der Station, bekommt im Kalender aber "
-               "das Wetter von Open-Meteo. Diese Werte weichen leicht voneinander ab.")
+    k1.metric("Infections detected", f"{ergebnis['erkannt']} of {ergebnis['total']}")
+    k2.metric("Missed", ergebnis["verpasst"])
+    k3.metric("False alarms", ergebnis["fehlalarme"])
+    st.caption("A missed infection is more dangerous than a false alarm. "
+               "The model learns from the station's measurements, but in the calendar it gets "
+               "the weather from Open-Meteo. These values differ slightly.")
 
 # Fusszeile
 st.divider()
-st.caption("Datenquellen: Wetter von Open-Meteo, Lerndaten für das Modell von Agrometeo (Station Zizers). "
-           "Die App ist eine Entscheidungshilfe und keine offizielle Pflanzenschutzberatung.")
+st.caption("Data sources: weather from Open-Meteo, training data for the model from Agrometeo (Zizers station). "
+           "The app is a decision aid and not official crop protection advice.")

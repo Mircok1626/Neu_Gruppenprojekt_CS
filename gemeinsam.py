@@ -157,8 +157,8 @@ def wetter_seit_neujahr(stichtag):
     Bis zum Stichtag: Agrometeo (gemessen, mit Blattnässe, Gradstunden und Infektionen).
     Danach: Prognose von Open-Meteo. Infektionen sagt dort das Modell voraus.
     Fehlen bei Agrometeo Tage vor dem Stichtag, kommen auch diese von Open-Meteo.
-    Spalte «quelle»: "gemessen" (Agrometeo), "geschätzt" (Open-Meteo, vor dem Stichtag)
-    oder "Prognose" (Open-Meteo, nach dem Stichtag).
+    Spalte «quelle»: "measured" (Agrometeo), "estimated" (Open-Meteo, vor dem Stichtag)
+    oder "forecast" (Open-Meteo, nach dem Stichtag).
     """
     stichtag = pd.Timestamp(stichtag)
     bis = stichtag + pd.Timedelta(days=14)
@@ -169,7 +169,7 @@ def wetter_seit_neujahr(stichtag):
         gemessen = gemessen[gemessen["datum"] <= stichtag].copy()
     except FileNotFoundError:
         gemessen = pd.DataFrame(columns=["datum"])
-    gemessen["quelle"] = "gemessen"
+    gemessen["quelle"] = "measured"
     gemessen["infektion"] = gemessen.get("infektion", pd.Series(dtype=int)).astype(bool)
 
     # 2) Alles danach (oder was bei Agrometeo fehlt) von Open-Meteo
@@ -182,7 +182,7 @@ def wetter_seit_neujahr(stichtag):
     except Exception:
         prognose = pd.DataFrame(columns=["datum"])
     # Nach dem Stichtag: Prognose. Davor (falls Agrometeo fehlt): vom Modell geschätzt
-    prognose["quelle"] = ["Prognose" if d > stichtag else "geschätzt" for d in prognose["datum"]]
+    prognose["quelle"] = ["forecast" if d > stichtag else "estimated" for d in prognose["datum"]]
     prognose["infektion"] = modell_sagt_infektion(prognose) if len(prognose) > 0 else pd.Series(dtype=bool)
 
     df = pd.concat([gemessen, prognose], ignore_index=True).sort_values("datum").reset_index(drop=True)

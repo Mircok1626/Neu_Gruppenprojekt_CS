@@ -11,8 +11,8 @@ import sqlite3
 import pandas as pd
 import streamlit as st
 
-st.title("Journal – was habe ich gespritzt?")
-st.caption("Jede Spritzung mit Datum, Parzelle, Mittel und Menge.")
+st.title("Journal – what have I sprayed?")
+st.caption("Every spraying with date, plot, product and amount.")
 
 # Verbindung zur Datenbank (dieselbe wie auf der Seite Parzelle)
 con = sqlite3.connect("daten/spritzplaner.db")
@@ -44,18 +44,18 @@ except Exception:
 vorschlag = st.session_state.get("dosierung_vorschlag", {})
 
 if vorschlag:
-    st.info("Die Werte aus der Dosierung wurden übernommen. Bitte prüfen und speichern.")
+    st.info("The values from the dosage page have been filled in. Please check and save.")
 
 
 # Formular: neue Spritzung erfassen
-st.subheader("Spritzung erfassen")
+st.subheader("Record spraying")
 
 with st.form("neue_spritzung", border=True):
     links, rechts = st.columns(2)   # Formular in zwei Spalten
 
     # Startwert: der Spritztag aus der Dosierung, sonst das Datum aus der Seitenleiste
     heute = st.session_state.get("heute", datetime.date.today())
-    datum = links.date_input("Datum", value=vorschlag.get("datum", heute), format="DD.MM.YYYY")
+    datum = links.date_input("Date", value=vorschlag.get("datum", heute), format="DD.MM.YYYY")
 
     # Parzelle: Liste der gespeicherten Parzellen. Die Parzelle aus der
     # Dosierung ist vorausgewählt, falls es sie gibt.
@@ -64,26 +64,26 @@ with st.form("neue_spritzung", border=True):
             start = parzellen_namen.index(vorschlag["parzelle"])
         else:
             start = 0
-        parzelle = rechts.selectbox("Parzelle", parzellen_namen, index=start)
+        parzelle = rechts.selectbox("Plot", parzellen_namen, index=start)
     else:
-        parzelle = rechts.text_input("Parzelle", placeholder="z. B. Sonnenhalde")
+        parzelle = rechts.text_input("Plot", placeholder="e.g. Sunny Slope")
 
     # vorschlag.get("mittel", "") heisst: den Wert aus der Dosierung nehmen,
     # und wenn es keinen gibt, ein leeres Feld zeigen.
-    mittel = links.text_input("Mittel", value=vorschlag.get("mittel", ""))
-    stadium = rechts.text_input("Rebstadium", value=vorschlag.get("stadium", ""))
-    wasser = links.number_input("Wasser (l/ha)", min_value=0, value=int(vorschlag.get("wasser_pro_ha", 0)))
-    menge = rechts.number_input("Menge Mittel total", min_value=0.0, value=float(vorschlag.get("menge", 0.0)))
-    einheit = links.selectbox("Einheit", ["kg", "l"], index=["kg", "l"].index(vorschlag.get("einheit", "kg")))
-    notiz = rechts.text_input("Notiz", placeholder="z. B. Wind leicht, alles gespritzt")
+    mittel = links.text_input("Product", value=vorschlag.get("mittel", ""))
+    stadium = rechts.text_input("Vine stage", value=vorschlag.get("stadium", ""))
+    wasser = links.number_input("Water (l/ha)", min_value=0, value=int(vorschlag.get("wasser_pro_ha", 0)))
+    menge = rechts.number_input("Total amount of product", min_value=0.0, value=float(vorschlag.get("menge", 0.0)))
+    einheit = links.selectbox("Unit", ["kg", "l"], index=["kg", "l"].index(vorschlag.get("einheit", "kg")))
+    notiz = rechts.text_input("Note", placeholder="e.g. light wind, everything sprayed")
 
-    gespeichert = st.form_submit_button("Spritzung speichern", type="primary")
+    gespeichert = st.form_submit_button("Save spraying", type="primary")
 
 
 # Nur wenn auf den Button geklickt wurde
 if gespeichert:
     if parzelle == "" or mittel == "" or menge == 0:
-        st.error("Bitte mindestens Parzelle, Mittel und Menge eingeben.")
+        st.error("Please enter at least plot, product and amount.")
     else:
         con.execute(
             "INSERT INTO spritzungen (datum, parzelle, mittel, stadium, wasser_l_ha, menge, einheit, notiz) "
@@ -99,32 +99,32 @@ if gespeichert:
 # Alle Spritzungen aus der Datenbank holen, die neuste zuoberst
 spritzungen = pd.read_sql_query("SELECT * FROM spritzungen ORDER BY datum DESC", con)
 
-st.subheader("Alle Spritzungen")
+st.subheader("All sprayings")
 
 if spritzungen.empty:
-    st.info("Es gibt noch keine Spritzungen. Erfasse oben deine erste.")
+    st.info("There are no sprayings yet. Record your first one above.")
 else:
     st.dataframe(
         spritzungen[["datum", "parzelle", "mittel", "stadium", "wasser_l_ha", "menge", "einheit", "notiz"]],
         hide_index=True,                                         # Zeilennummern ausblenden
         column_config={                                          # schönere Spaltentitel
-            "datum": "Datum",
-            "parzelle": "Parzelle",
-            "mittel": "Mittel",
-            "stadium": "Stadium",
-            "wasser_l_ha": "Wasser (l/ha)",
-            "menge": st.column_config.NumberColumn("Menge", format="%.2f"),
-            "einheit": "Einheit",
-            "notiz": "Notiz",
+            "datum": "Date",
+            "parzelle": "Plot",
+            "mittel": "Product",
+            "stadium": "Stage",
+            "wasser_l_ha": "Water (l/ha)",
+            "menge": st.column_config.NumberColumn("Amount", format="%.2f"),
+            "einheit": "Unit",
+            "notiz": "Note",
         },
     )
 
     # Eine Spritzung löschen (aufklappbar, damit man nicht aus Versehen löscht)
-    with st.expander("Spritzung löschen"):
+    with st.expander("Delete spraying"):
         # Jede Spritzung als lesbarer Text, z. B. "2026-05-17 · Sonnenhalde · Folpet 80 WG"
         texte = spritzungen["datum"] + " · " + spritzungen["parzelle"] + " · " + spritzungen["mittel"]
-        auswahl = st.selectbox("Welche Spritzung?", texte)
-        if st.button("Löschen"):
+        auswahl = st.selectbox("Which spraying?", texte)
+        if st.button("Delete"):
             # Die id der gewählten Zeile suchen und diese Zeile löschen
             id_loeschen = int(spritzungen[texte == auswahl]["id"].iloc[0])
             con.execute("DELETE FROM spritzungen WHERE id = ?", (id_loeschen,))
@@ -132,4 +132,4 @@ else:
             st.rerun()
 
 st.divider()
-st.caption("Die Spritzungen sind in der Datenbank gespeichert und gelten als Nachweis (ÖLN).")
+st.caption("The sprayings are stored in the database and serve as proof of ecological performance (ÖLN).")

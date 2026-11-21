@@ -36,13 +36,13 @@ def zeige_banner():
         margin-bottom: 24px;
     ">
         <p style="margin: 0; font-size: 14px; letter-spacing: 2px; text-transform: uppercase; color: #F3D9DF;">
-            Willkommen zurück
+            Welcome back
         </p>
         <h1 style="margin: 0; padding: 8px 0; font-size: 52px; color: white;">
-            Spritzplaner
+            Spray Planner
         </h1>
         <p style="margin: 0; font-size: 19px; color: #F8E8EC;">
-            Deine Pflanzenschutz-Planung an einem Ort: Parzellen, Dosierung, Termine und Wetter.
+            Your crop protection planning in one place: plots, dosage, dates and weather.
         </p>
     </div>
     """, unsafe_allow_html=True)
@@ -55,15 +55,15 @@ def zeige_kacheln():
     Jede Kachel enthält ein Icon, einen Titel, eine kurze Beschreibung
     und einen Link zur entsprechenden Seite.
     """
-    st.subheader("Wohin möchtest du?")
+    st.subheader("Where would you like to go?")
 
     kacheln = [
-        {"titel": "Dashboard", "text": "Überblick über alles auf einen Blick", "icon": "bar_chart", "seite": "pages/dashboard.py"},
-        {"titel": "Dosierung", "text": "Mittel und Mengen berechnen", "icon": "science", "seite": "pages/dosierung.py"},
-        {"titel": "Journal", "text": "Behandlungen festhalten", "icon": "description", "seite": "pages/journal.py"},
-        {"titel": "Kalender", "text": "Spritztermine planen", "icon": "calendar_month", "seite": "pages/kalender.py"},
-        {"titel": "Parzellen", "text": "Flächen verwalten", "icon": "map", "seite": "pages/parzellen.py"},
-        {"titel": "Wetter", "text": "Bedingungen vor dem Spritzen prüfen", "icon": "cloud", "seite": "pages/wetter.py"},
+        {"titel": "Dashboard", "text": "Overview of everything at a glance", "icon": "bar_chart", "seite": "pages/dashboard.py"},
+        {"titel": "Dosage", "text": "Calculate products and amounts", "icon": "science", "seite": "pages/dosierung.py"},
+        {"titel": "Journal", "text": "Record treatments", "icon": "description", "seite": "pages/journal.py"},
+        {"titel": "Calendar", "text": "Plan spray dates", "icon": "calendar_month", "seite": "pages/kalender.py"},
+        {"titel": "Plots", "text": "Manage areas", "icon": "map", "seite": "pages/parzellen.py"},
+        {"titel": "Weather", "text": "Check conditions before spraying", "icon": "cloud", "seite": "pages/wetter.py"},
     ]
 
     spalten = st.columns(3) + st.columns(3)
@@ -73,7 +73,7 @@ def zeige_kacheln():
             with st.container(border=True):
                 st.markdown(f"#### :material/{kachel['icon']}: {kachel['titel']}")
                 st.caption(kachel["text"])
-                st.page_link(kachel["seite"], label="Öffnen", icon=":material/arrow_forward:")
+                st.page_link(kachel["seite"], label="Open", icon=":material/arrow_forward:")
 
 
 zeige_banner()
