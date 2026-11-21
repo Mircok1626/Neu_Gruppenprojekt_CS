@@ -215,9 +215,9 @@ with st.expander("How does the calendar detect infections? (Machine Learning)"):
         "A **Random Forest** (300 decision trees) learned from the Agrometeo data "
         "**2019 to 2025** (7 years) which weather leads to an infection: "
         "temperature (min, mean, max), rain on the day and the day before, and the time of year. "
-        "For past days, the calendar uses the measured infections from Agrometeo. "
-        "For the forecast days, the model looks at the weather from Open-Meteo and says "
-        "whether there will be an infection: yes or no. Warnings are only given during the spray season: "
+        "For past days with Agrometeo data, the calendar uses the measured infections from Agrometeo. "
+        "For all other days (past days without Agrometeo data and the forecast), the model looks at "
+        "the weather from Open-Meteo and says whether there will be an infection: yes or no. Warnings are only given during the spray season: "
         "from germination readiness (temperature sum 140) until the end of August."
     )
     st.markdown(f"**Test with the {g.TESTJAHR} season** (days the model never saw during training):")

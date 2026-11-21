@@ -1,9 +1,10 @@
 """Seite Wetter: Warum warnt die App?
 
 Zeigt Temperatur, Regen, Gradstunden bei Blattnässe und ob die Sporen keimbereit sind.
-Bis «heute» (Datum links in der Seitenleiste) kommen die Werte gemessen von Agrometeo,
-seit dem 1.1. und mit echter Blattnässe. Danach folgt die Prognose von Open-Meteo,
-dort sagt das Modell (gemeinsam.py) die Infektionen voraus.
+Seit dem 1.1. kommen die Werte gemessen von Agrometeo (mit echter Blattnässe), aber nur
+bis zum letzten Tag, für den es Agrometeo-Daten gibt. Fehlen Tage bis «heute» (Datum links
+in der Seitenleiste), kommen diese von Open-Meteo (geschätzt). Nach heute folgt die Prognose
+von Open-Meteo. Für alle Open-Meteo-Tage sagt das Modell (gemeinsam.py) die Infektionen voraus.
 """
 
 import altair as alt
@@ -16,6 +17,7 @@ WEINROT = "#7B1E3A"
 BLAU = "#5B8DBE"
 GRAU_PUNKT = "#8A8A8A"
 PROGNOSE_FLAECHE = "#F1E8E0"
+GESCHAETZT_FLAECHE = "#E8EDF3"   # Tage ohne Agrometeo-Daten vor heute (von Open-Meteo geschätzt)
 
 
 def zeige_titel(jahr):
@@ -52,6 +54,13 @@ def prognose_flaeche(df, heute):
     return alt.Chart(bereich).mark_rect(color=PROGNOSE_FLAECHE).encode(x="von:T", x2="bis:T")
 
 
+def geschaetzt_flaeche(df, letzter_messtag, heute):
+    """Hellblaue Fläche über den Tagen ohne Agrometeo-Daten (nach dem letzten Messtag bis heute)."""
+    von = max(letzter_messtag + pd.Timedelta(days=1), df["datum"].min())
+    bereich = pd.DataFrame({"von": [von], "bis": [heute]})
+    return alt.Chart(bereich).mark_rect(color=GESCHAETZT_FLAECHE).encode(x="von:T", x2="bis:T")
+
+
 def heute_linie(heute):
     """Gestrichelte senkrechte Linie bei heute."""
     return alt.Chart(pd.DataFrame({"heute": [heute]})).mark_rule(
@@ -68,17 +77,26 @@ def zoom_waagrecht():
     return alt.selection_interval(bind="scales", encodings=["x"])
 
 
-def zeige_kombi_diagramm(df, heute):
+def zeige_kombi_diagramm(df, heute, letzter_messtag):
     """Diagramm 1: Temperatur (Linie), Regen (Balken) und Infektionen (Punkte)."""
+    # Gibt es vor heute Tage ohne Agrometeo-Daten? (NaT heisst: gar keine Agrometeo-Daten)
+    keine_messung = pd.isna(letzter_messtag)
+    luecke = keine_messung or letzter_messtag < heute
+    if keine_messung:
+        letzter_messtag = df["datum"].min() - pd.Timedelta(days=1)
+
     with st.container(border=True):
         st.subheader("Temperature, rain and infections")
-        legende([
+        eintraege = [
             (symbol_linie(WEINROT), "Daily mean °C"),
             (symbol_kasten(BLAU), "Rain mm"),
             (symbol_punkt(WEINROT), "Infection"),
             (symbol_punkt(GRAU_PUNKT), "Infection weather, but spores not yet ready to germinate"),
-            (symbol_kasten(PROGNOSE_FLAECHE, "1px solid #D8C8B8"), "Forecast"),
-        ])
+        ]
+        if luecke:
+            eintraege.append((symbol_kasten(GESCHAETZT_FLAECHE, "1px solid #C8D2DE"), "Estimated (no Agrometeo data)"))
+        eintraege.append((symbol_kasten(PROGNOSE_FLAECHE, "1px solid #D8C8B8"), "Forecast"))
+        legende(eintraege)
 
         achse = alt.X("datum:T", title=None, axis=alt.Axis(format="%d.%m."))
         basis = alt.Chart(df).encode(x=achse)
@@ -103,11 +121,25 @@ def zeige_kombi_diagramm(df, heute):
             tooltip=[alt.Tooltip("datum:T", title="Date", format="%d.%m.%Y"),
                      alt.Tooltip("art:N", title="Type"), alt.Tooltip("quelle:N", title="Source")])
 
-        diagramm = alt.layer(prognose_flaeche(df, heute), regen, temperatur, heute_linie(heute), punkte
+        flaechen = [prognose_flaeche(df, heute)]
+        if luecke:
+            flaechen.append(geschaetzt_flaeche(df, letzter_messtag, heute))
+        diagramm = alt.layer(*flaechen, regen, temperatur, heute_linie(heute), punkte
                              ).resolve_scale(y="independent").properties(height=280)
         st.altair_chart(diagramm, width="stretch")
-        st.caption("Measured by Agrometeo up to today, then forecast from Open-Meteo. "
-                   "Infections in the forecast are predicted by the model (as in the calendar). "
+
+        # Beschriftung: Bis wann gibt es wirklich Messungen von Agrometeo?
+        if keine_messung:
+            quelle_text = ("No Agrometeo measurements in this period: all values come from Open-Meteo "
+                           "(estimated up to today, then forecast). ")
+        elif luecke:
+            quelle_text = (f"Measured by Agrometeo up to {letzter_messtag:%d.%m.%Y} (last day with Agrometeo data). "
+                           f"From {letzter_messtag + pd.Timedelta(days=1):%d.%m.} to today the values come from "
+                           "Open-Meteo (estimated), after today it is the forecast from Open-Meteo. ")
+        else:
+            quelle_text = "Measured by Agrometeo up to today, then forecast from Open-Meteo. "
+        st.caption(quelle_text
+                   + "Infections on days without Agrometeo data are predicted by the model (as in the calendar). "
                    "Zoom: mouse wheel in the chart, pan: drag, reset: double-click.")
 
 
@@ -191,7 +223,10 @@ def hauptseite():
     else:
         df_anzeige = df_gesamt
 
-    zeige_kombi_diagramm(df_anzeige, heute)
+    # Letzter Tag mit Messungen von Agrometeo (NaT, wenn es keine gibt)
+    letzter_messtag = df_gesamt.loc[df_gesamt["quelle"] == "measured", "datum"].max()
+
+    zeige_kombi_diagramm(df_anzeige, heute, letzter_messtag)
     zeige_gradstunden_diagramm(df_anzeige, heute)
     zeige_keimbereitschaft(df_gesamt, heute, keimbereit)
 
@@ -199,7 +234,7 @@ def hauptseite():
         spalten = ["datum", "quelle", "temp_mittel", "niederschlag_mm", "blattnaesse_std",
                    "gradstunden_bn", "temperatursumme", "keimbereit", "infektion"]
         st.dataframe(df_anzeige[[s for s in spalten if s in df_anzeige]], width="stretch", hide_index=True)
-        st.caption("Source: Agrometeo (measured) and Open-Meteo (forecast) · Zizers station")
+        st.caption("Source: Agrometeo (measured) and Open-Meteo (estimated and forecast) · Zizers station")
 
 
 hauptseite()
