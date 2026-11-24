@@ -12,7 +12,7 @@ import pandas as pd
 import streamlit as st
 
 st.title("Journal – what have I sprayed?")
-st.caption("Every spraying with date, plot, product and amount.")
+st.caption("Every spraying with date, vineyard, product and amount.")
 
 # Verbindung zur Datenbank (dieselbe wie auf der Seite Parzelle)
 con = sqlite3.connect("daten/spritzplaner.db")

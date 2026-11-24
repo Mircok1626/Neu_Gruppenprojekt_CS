@@ -42,7 +42,7 @@ def zeige_banner():
             Spray Planner
         </h1>
         <p style="margin: 0; font-size: 19px; color: #F8E8EC;">
-            Your crop protection planning in one place: plots, dosage, dates and weather.
+            Your crop protection planning in one place: vineyards, dosage, dates and weather.
         </p>
     </div>
     """, unsafe_allow_html=True)
