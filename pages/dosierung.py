@@ -34,7 +34,7 @@ EINHEIT = "kg"          # Folpet 80 WG ist ein Granulat und wird abgewogen
 
 # Titel und Untertitel
 st.title("Dosage – how much product and water do I need?")
-st.caption(f"A tank recipe for {MITTEL} is calculated from the vine stage, plot and sprayer.")
+st.caption(f"A tank recipe for {MITTEL} is calculated from the vine stage, vineyard and sprayer.")
 
 # Parzellen aus der Datenbank holen (dieselbe Datenbank wie auf der Seite Parzelle).
 # try/except: Gibt es die Tabelle noch nicht, stürzt die Seite nicht ab,
@@ -56,7 +56,7 @@ with links:
     if parzellen.empty:
         # Gibt es noch keine Parzellen, geht nur die Eingabe von Hand.
         manuell = True
-        st.caption("No plots saved yet. Please enter the area manually.")
+        st.caption("No vineyards saved yet. Please enter the area manually.")
     else:
         manuell = st.checkbox("Enter manually")
 
@@ -64,7 +64,7 @@ with links:
         parzelle = ""   # keine Parzelle gewählt
         flaeche = st.number_input("Area (ha)", min_value=0.01, value=0.8, step=0.1)
     else:
-        parzelle = st.selectbox("Plot", list(parzellen["name"]))
+        parzelle = st.selectbox("Vineyard", list(parzellen["name"]))
         # Die Zeile der gewählten Parzelle suchen und die Fläche daraus lesen.
         zeile = parzellen[parzellen["name"] == parzelle].iloc[0]
         flaeche = float(zeile["flaeche_ha"])

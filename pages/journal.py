@@ -64,9 +64,9 @@ with st.form("neue_spritzung", border=True):
             start = parzellen_namen.index(vorschlag["parzelle"])
         else:
             start = 0
-        parzelle = rechts.selectbox("Plot", parzellen_namen, index=start)
+        parzelle = rechts.selectbox("Vineyard", parzellen_namen, index=start)
     else:
-        parzelle = rechts.text_input("Plot", placeholder="e.g. Sunny Slope")
+        parzelle = rechts.text_input("Vineyard", placeholder="e.g. Sunny Slope")
 
     # vorschlag.get("mittel", "") heisst: den Wert aus der Dosierung nehmen,
     # und wenn es keinen gibt, ein leeres Feld zeigen.
@@ -83,7 +83,7 @@ with st.form("neue_spritzung", border=True):
 # Nur wenn auf den Button geklickt wurde
 if gespeichert:
     if parzelle == "" or mittel == "" or menge == 0:
-        st.error("Please enter at least plot, product and amount.")
+        st.error("Please enter at least vineyard, product and amount.")
     else:
         con.execute(
             "INSERT INTO spritzungen (datum, parzelle, mittel, stadium, wasser_l_ha, menge, einheit, notiz) "
@@ -109,7 +109,7 @@ else:
         hide_index=True,                                         # Zeilennummern ausblenden
         column_config={                                          # schönere Spaltentitel
             "datum": "Date",
-            "parzelle": "Plot",
+            "parzelle": "Vineyard",
             "mittel": "Product",
             "stadium": "Stage",
             "wasser_l_ha": "Water (l/ha)",

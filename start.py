@@ -62,7 +62,7 @@ def zeige_kacheln():
         {"titel": "Dosage", "text": "Calculate products and amounts", "icon": "science", "seite": "pages/dosierung.py"},
         {"titel": "Journal", "text": "Record treatments", "icon": "description", "seite": "pages/journal.py"},
         {"titel": "Calendar", "text": "Plan spray dates", "icon": "calendar_month", "seite": "pages/kalender.py"},
-        {"titel": "Plots", "text": "Manage areas", "icon": "map", "seite": "pages/parzellen.py"},
+        {"titel": "Vineyards", "text": "Manage areas", "icon": "map", "seite": "pages/parzellen.py"},
         {"titel": "Weather", "text": "Check conditions before spraying", "icon": "cloud", "seite": "pages/wetter.py"},
     ]
 

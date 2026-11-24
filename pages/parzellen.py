@@ -10,7 +10,7 @@ STATIONEN = {
     "Zizers": (46.93, 9.56),
 }
 
-st.title("Plots – which vineyards do I have?")
+st.title("Vineyards – which vineyards do I have?")
 st.caption("Your vineyards with area, variety and weather station.")
 
 # Verbindung zur Datenbank. Gibt es die Datei noch nicht, wird sie erstellt. ->über con mit Datenbank sprechen
@@ -38,7 +38,7 @@ if st.session_state.pop("parzellen_gespeichert", False):
 # Drei Kennzahlen nebeneinander, jede in einem Kasten mit Rahmen
 spalte1, spalte2, spalte3 = st.columns(3)
 with spalte1.container(border=True):
-    st.metric("Plots", len(parzellen))
+    st.metric("Vineyards", len(parzellen))
 with spalte2.container(border=True):
     st.metric("Total area", f"{parzellen['flaeche_ha'].sum():.2f} ha")
 with spalte3.container(border=True):
@@ -48,7 +48,7 @@ with spalte3.container(border=True):
 st.subheader("Overview")
 
 if parzellen.empty:
-    st.info("There are no plots yet. Create your first one below.")
+    st.info("There are no Vineyards yet. Create your first one below.")
 else:
     st.caption("To change a value, click a cell, type the new value and then click «Save changes».")
     # st.data_editor zeigt eine Tabelle, in der man die Felder ändern kann.
@@ -71,7 +71,7 @@ else:
         namen_fehlen = bearbeitet["name"].fillna("").str.strip().eq("").any()
         flaeche_fehlt = bearbeitet["flaeche_ha"].isna().any() or (bearbeitet["flaeche_ha"] <= 0).any()
         if namen_fehlen or flaeche_fehlt:
-            st.error("Every plot needs a name and an area.")
+            st.error("Every vineyard needs a name and an area.")
         else:
             # Jede Zeile in der Datenbank mit den Werten aus der Tabelle überschreiben
             for _, zeile in bearbeitet.iterrows():
@@ -85,7 +85,7 @@ else:
             st.rerun()      #Seite neu laden, damit auch die Kennzahlen oben stimmen
 
 # Formular für eine neue Parzelle
-st.subheader("New plot")
+st.subheader("New vineyard")
 
 with st.form("neue_parzelle", border=True):
     links, rechts = st.columns(2)   # Formular in zwei Spalten
@@ -93,7 +93,7 @@ with st.form("neue_parzelle", border=True):
     sorte = rechts.text_input("Variety", placeholder="e.g. Pinot Noir")
     flaeche = links.number_input("Area (ha)", min_value=0.0, step=0.1)
     station = rechts.selectbox("Weather station", list(STATIONEN.keys()))
-    gespeichert = st.form_submit_button("Save plot", type="primary")
+    gespeichert = st.form_submit_button("Save vineyard", type="primary")
 
 
 # Nur wenn auf den Button geklickt wurde
@@ -110,8 +110,8 @@ if gespeichert:
 
 # Eine Parzelle löschen (aufklappbar, damit man nicht aus Versehen löscht)
 if not parzellen.empty:
-    with st.expander("Delete plot"):
-        auswahl = st.selectbox("Which plot?", parzellen["name"])
+    with st.expander("Delete vineyard"):
+        auswahl = st.selectbox("Which vineyard?", parzellen["name"])
         if st.button("Delete"):
             con.execute("DELETE FROM parzellen WHERE name = ?", (auswahl,))
             con.commit()
